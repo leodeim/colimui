@@ -1,5 +1,7 @@
 # colimui
 
+![colimui logo](assets/colimui-logo.png)
+
 a small terminal ui for colima and docker.
 
 ## run
