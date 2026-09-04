@@ -150,6 +150,9 @@ func TestMiddleTruncatePreservesSuffix(t *testing.T) {
 	if len(got) != 10 || !strings.HasSuffix(got, "01") {
 		t.Fatalf("middle truncate = %q", got)
 	}
+	if got := statusLabel("Up 31 minutes", 6); got != "Up" {
+		t.Fatalf("status label = %q", got)
+	}
 }
 
 func TestReadAllLogReader(t *testing.T) {

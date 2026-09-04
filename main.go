@@ -372,7 +372,7 @@ func (m model) renderContainers(height, width int) string {
 		start = min(start, max(0, len(m.containers)-rowCount))
 		end := min(len(m.containers), start+rowCount)
 		rowWidth := max(8, width-4)
-		nameWidth := min(18, max(10, rowWidth-9))
+		nameWidth := min(18, max(10, rowWidth-11))
 		statusWidth := max(4, rowWidth-nameWidth-5)
 		for i := start; i < end; i++ {
 			c := m.containers[i]
@@ -380,7 +380,7 @@ func (m model) renderContainers(height, width int) string {
 			if c.State == "running" {
 				marker = "●"
 			}
-			containerStatus := truncate(c.Status, statusWidth)
+			containerStatus := statusLabel(c.Status, statusWidth)
 			line := fmt.Sprintf("%s %-*s %s", marker, nameWidth, middleTruncate(c.Name, nameWidth), containerStatus)
 			if i == m.containerIndex {
 				line = selectedRowStyle.Render("> " + line)
@@ -752,6 +752,14 @@ func middleTruncate(value string, width int) string {
 	left := (width - 3 + 1) / 2
 	right := width - 3 - left
 	return value[:left] + "..." + value[len(value)-right:]
+}
+
+func statusLabel(value string, width int) string {
+	fields := strings.Fields(value)
+	if width >= 4 && len(fields) > 0 && len(fields[0]) <= width {
+		return fields[0]
+	}
+	return truncate(value, width)
 }
 
 func max(a, b int) int {
