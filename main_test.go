@@ -1,6 +1,7 @@
 package main
 
 import (
+	"io"
 	"os/exec"
 	"strings"
 	"testing"
@@ -109,5 +110,62 @@ func TestVisibleLogsAtStart(t *testing.T) {
 	got := m.visibleLogs(2)
 	if len(got) != 2 || got[0] != "first" || got[1] != "second" {
 		t.Fatalf("logs at start = %#v", got)
+	}
+}
+
+func TestReadLogsMergesOutputAndReportsFailure(t *testing.T) {
+	cmd := exec.Command("sh", "-c", "printf stdout; printf stderr >&2; exit 7")
+	reader, err := startLogReader(cmd, func() {})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var output strings.Builder
+	m := model{reader: reader}
+	for {
+		msg := m.readLogsCmd()().(logsMsg)
+		output.Write(msg.data)
+		if msg.done {
+			if msg.err == nil {
+				t.Fatal("expected command failure")
+			}
+			break
+		}
+	}
+	if got := output.String(); !strings.Contains(got, "stdout") || !strings.Contains(got, "stderr") {
+		t.Fatalf("merged output = %q", got)
+	}
+}
+
+func TestFinishLogsKeepsPartialLine(t *testing.T) {
+	m := model{}
+	m.appendLogs("complete\npartial")
+	m.finishLogs()
+	if len(m.logs) != 2 || m.logs[1] != "partial" || m.logPartial != "" {
+		t.Fatalf("finished logs = %#v partial %q", m.logs, m.logPartial)
+	}
+}
+
+func TestMiddleTruncatePreservesSuffix(t *testing.T) {
+	got := middleTruncate("colimui-test-01", 10)
+	if len(got) != 10 || !strings.HasSuffix(got, "01") {
+		t.Fatalf("middle truncate = %q", got)
+	}
+}
+
+func TestReadAllLogReader(t *testing.T) {
+	cmd := exec.Command("sh", "-c", "printf partial")
+	reader, err := startLogReader(cmd, func() {})
+	if err != nil {
+		t.Fatal(err)
+	}
+	output, err := io.ReadAll(reader.out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if exitErr := reader.exitError(); exitErr != nil {
+		t.Fatalf("command error = %v", exitErr)
+	}
+	if string(output) != "partial" {
+		t.Fatalf("output = %q", output)
 	}
 }
