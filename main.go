@@ -375,7 +375,8 @@ func (m model) renderDetails(height, width int) string {
 	if c == nil {
 		lines = append(lines, "", mutedStyle.Render("select a container"))
 	} else {
-		lines = append(lines, "", titleStyle.Render(c.Name), "", "state   "+c.State, "status  "+c.Status, "image   "+c.Image, "id      "+c.ID, "command "+truncate(c.Command, max(10, width-10)), "ports   "+c.Ports, "")
+		valueWidth := max(10, width-10)
+		lines = append(lines, "", titleStyle.Render(truncate(c.Name, max(10, width-2))), "", "state   "+truncate(c.State, valueWidth), "status  "+truncate(c.Status, valueWidth), "image   "+truncate(c.Image, valueWidth), "id      "+truncate(c.ID, valueWidth), "command "+truncate(c.Command, valueWidth), "ports   "+truncate(c.Ports, valueWidth), "")
 		lines = append(lines, "logs  "+map[bool]string{true: "following", false: "paused"}[m.follow])
 		if len(m.logs) == 0 {
 			lines = append(lines, mutedStyle.Render("no logs"))
@@ -393,7 +394,7 @@ func (m model) renderPane(lines []string, width, height int, focused bool) strin
 	if focused {
 		border = accent
 	}
-	return lipgloss.NewStyle().Width(width).Height(height).MaxHeight(height).Padding(0, 1).Border(lipgloss.RoundedBorder()).BorderForeground(border).Render(strings.Join(lines, "\n"))
+	return lipgloss.NewStyle().Width(width).Height(height).Padding(0, 1).Border(lipgloss.RoundedBorder()).BorderForeground(border).Render(strings.Join(lines, "\n"))
 }
 
 func (m model) visibleLogs(count int) []string {

@@ -85,7 +85,21 @@ func TestContainerPaneFitsHeight(t *testing.T) {
 		containers[i] = container{Name: "colimui-test", State: "running", Status: "Up"}
 	}
 	m := model{containers: containers, containerIndex: 50}
-	if got := lipgloss.Height(m.renderContainers(20, 38)); got != 20 {
-		t.Fatalf("container pane height = %d, want 20", got)
+	if got := lipgloss.Height(m.renderContainers(20, 38)); got != 22 {
+		t.Fatalf("container pane height = %d, want 22", got)
+	}
+}
+
+func TestDetailsPanePreservesBorder(t *testing.T) {
+	m := model{
+		containers: []container{{ID: "abc", Name: "test", State: "running", Status: "Up", Image: "alpine"}},
+		logs:       make([]string, 200),
+	}
+	view := m.renderDetails(20, 80)
+	if got := lipgloss.Height(view); got != 22 {
+		t.Fatalf("details pane height = %d, want 22", got)
+	}
+	if !strings.Contains(view, "╰") {
+		t.Fatal("details pane is missing its bottom border")
 	}
 }
