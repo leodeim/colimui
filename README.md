@@ -1,6 +1,8 @@
 # colimui
 
-![colimui logo](assets/colimui-logo.png)
+<p align="center">
+  <img src="assets/colimui-logo.png" alt="colimui logo" width="220">
+</p>
 
 a small terminal ui for colima and docker.
 
