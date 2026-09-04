@@ -12,4 +12,4 @@ colimui uses the selected colima profile's docker context. start colima before l
 
 ## keys
 
-`enter` start/stop · `t` restart · `d` delete · `l` reload logs · `f` follow logs · `r` refresh · `q` quit
+`enter` expand groups/start-stop services · `t` restart · `d` delete · `l` reload logs · `f` follow logs · `r` refresh · `q` quit

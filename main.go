@@ -32,13 +32,33 @@ type profile struct {
 }
 
 type container struct {
-	ID      string
+	ID             string
+	Name           string
+	Image          string
+	State          string
+	Status         string
+	Command        string
+	Ports          string
+	ComposeProject string
+	ComposeService string
+}
+
+type containerGroup struct {
 	Name    string
-	Image   string
-	State   string
-	Status  string
-	Command string
-	Ports   string
+	Indices []int
+}
+
+type listItem struct {
+	group          string
+	groupHeader    bool
+	containerIndex int
+}
+
+func (c container) listName() string {
+	if c.ComposeService != "" {
+		return c.ComposeService
+	}
+	return c.Name
 }
 
 type refreshMsg struct {
@@ -107,10 +127,11 @@ type model struct {
 	logFromStart   bool
 	follow         bool
 	reader         *logReader
+	expanded       map[string]bool
 }
 
 func initialModel() model {
-	return model{focus: 0, status: "loading"}
+	return model{focus: 0, status: "loading", expanded: make(map[string]bool)}
 }
 
 func (m model) Init() tea.Cmd {
@@ -127,15 +148,23 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width, m.height = msg.Width, msg.Height
 	case refreshMsg:
 		oldID := m.selectedID()
+		oldGroup := m.selectedGroupName()
 		previousErr, previousStatus := m.err, m.status
 		m.profiles, m.containers, m.err = msg.profiles, msg.containers, msg.err
+		m.syncExpanded()
 		if m.profileIndex >= len(m.profiles) {
 			m.profileIndex = max(0, len(m.profiles)-1)
 		}
 		if len(m.containers) == 0 {
 			m.containerIndex = 0
-		} else if m.containerIndex >= len(m.containers) {
-			m.containerIndex = len(m.containers) - 1
+		} else if index := m.findContainerItem(oldID); index >= 0 {
+			m.containerIndex = index
+		} else if index := m.findGroupItem(oldGroup); index >= 0 {
+			m.containerIndex = index
+		} else if oldID == "" && oldGroup == "" {
+			m.containerIndex = m.firstContainerItem()
+		} else if items := m.listItems(); m.containerIndex >= len(items) {
+			m.containerIndex = len(items) - 1
 		}
 		if m.err != nil {
 			m.status = "connection error"
@@ -208,11 +237,12 @@ func (m model) mouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	}
 	leftWidth := min(38, max(26, m.width/3))
 	if event.X < leftWidth {
+		itemCount := len(m.listItems())
 		if event.Button == tea.MouseButtonWheelUp && m.containerIndex > 0 {
 			m.containerIndex--
 			return m, m.reloadSelectedLogs()
 		}
-		if event.Button == tea.MouseButtonWheelDown && m.containerIndex < len(m.containers)-1 {
+		if event.Button == tea.MouseButtonWheelDown && m.containerIndex < itemCount-1 {
 			m.containerIndex++
 			return m, m.reloadSelectedLogs()
 		}
@@ -268,7 +298,7 @@ func (m model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, m.reloadSelectedLogs()
 		}
 	case "down", "j":
-		if m.focus == 0 && m.containerIndex < len(m.containers)-1 {
+		if m.focus == 0 && m.containerIndex < len(m.listItems())-1 {
 			m.containerIndex++
 			return m, m.reloadSelectedLogs()
 		}
@@ -291,7 +321,9 @@ func (m model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, actionCmd(m.currentProfileName(), "restart", "docker", "restart", c.ID)
 		}
 	case "enter":
-		if c := m.selectedContainer(); c != nil {
+		if item := m.selectedItem(); item != nil && item.groupHeader {
+			m.toggleSelectedGroup()
+		} else if c := m.selectedContainer(); c != nil {
 			verb := "stop"
 			if c.State != "running" {
 				verb = "start"
@@ -353,7 +385,7 @@ func (m model) View() string {
 	if m.focus == 1 {
 		focusName = "details"
 	}
-	footer := mutedStyle.Render("focus: " + focusName + "  ↑↓/jk move  [] profile  tab focus  enter start/stop  t restart  d delete  l logs  f follow  home first  end latest  r refresh  q quit")
+	footer := mutedStyle.Render("focus: " + focusName + "  ↑↓/jk move  [] profile  tab focus  enter expand/start/stop  t restart  d delete  l logs  f follow  home first  end latest  r refresh  q quit")
 	if m.confirmDelete {
 		footer = statusStyle.Render(m.status)
 	} else if m.err != nil {
@@ -370,37 +402,59 @@ func (m model) renderContainers(height, width int) string {
 		heading = selectedStyle.Render("▸ " + heading)
 	}
 	lines := []string{heading + "  " + mutedStyle.Render(strconv.Itoa(len(m.containers)))}
-	if len(m.containers) == 0 {
+	items := m.listItems()
+	if len(items) == 0 {
 		lines = append(lines, "", mutedStyle.Render("no containers"))
 	} else {
 		rowCount := max(1, height-1)
 		start := max(0, m.containerIndex-rowCount+1)
-		start = min(start, max(0, len(m.containers)-rowCount))
-		end := min(len(m.containers), start+rowCount)
+		start = min(start, max(0, len(items)-rowCount))
+		end := min(len(items), start+rowCount)
 		rowWidth := max(8, width-4)
-		nameWidth := min(18, max(10, rowWidth-11))
-		statusWidth := max(4, rowWidth-nameWidth-5)
 		for i := start; i < end; i++ {
-			c := m.containers[i]
+			item := items[i]
+			if item.groupHeader {
+				group := m.selectedGroupByName(item.group)
+				marker := "▶"
+				if m.isExpanded(item.group) {
+					marker = "▼"
+				}
+				summary := groupSummary(group, m.containers)
+				summaryWidth := min(len(summary), max(4, rowWidth-9))
+				nameWidth := min(18, max(4, rowWidth-summaryWidth-5))
+				summary = truncate(summary, summaryWidth)
+				plain := fmt.Sprintf("%s %-*s %s", marker, nameWidth, middleTruncate(group.Name, nameWidth), summary)
+				if i == m.containerIndex {
+					lines = append(lines, selectedRowStyle.Render("> "+plain))
+				} else {
+					lines = append(lines, "  "+titleStyle.Render(marker)+" "+middleTruncate(group.Name, nameWidth)+" "+mutedStyle.Render(summary))
+				}
+				continue
+			}
+			c := m.containers[item.containerIndex]
+			indent := ""
+			if item.group != "standalone" {
+				indent = "  "
+			}
+			nameWidth := min(18, max(10, rowWidth-11-len(indent)))
+			statusWidth := max(4, rowWidth-nameWidth-5-len(indent))
 			marker := "○"
 			if c.State == "running" {
 				marker = "●"
 			}
 			containerStatus := statusLabel(c.Status, statusWidth)
-			line := fmt.Sprintf("%s %-*s %s", marker, nameWidth, middleTruncate(c.Name, nameWidth), containerStatus)
+			name := middleTruncate(c.listName(), nameWidth)
+			plain := fmt.Sprintf("%s%s %-*s %s", indent, marker, nameWidth, name, containerStatus)
 			if i == m.containerIndex {
-				line = selectedRowStyle.Render("> " + line)
+				lines = append(lines, selectedRowStyle.Render("> "+plain))
 			} else {
+				markerStyle := stoppedStyle
 				if c.State == "running" {
-					marker = runningStyle.Render(marker)
-					containerStatus = runningStyle.Render(containerStatus)
-				} else {
-					marker = stoppedStyle.Render(marker)
-					containerStatus = stoppedStyle.Render(containerStatus)
+					markerStyle = runningStyle
 				}
-				line = "  " + fmt.Sprintf("%s %-*s %s", marker, nameWidth, middleTruncate(c.Name, nameWidth), containerStatus)
+				body := fmt.Sprintf("%s%s %-*s %s", indent, markerStyle.Render(marker), nameWidth, name, markerStyle.Render(containerStatus))
+				lines = append(lines, "  "+body)
 			}
-			lines = append(lines, line)
 		}
 	}
 	return m.renderPane(lines, width, height, m.focus == 0)
@@ -414,7 +468,11 @@ func (m model) renderDetails(height, width int) string {
 	}
 	lines := []string{heading}
 	if c == nil {
-		lines = append(lines, "", mutedStyle.Render("select a container"))
+		if group := m.selectedGroup(); group != nil {
+			lines = append(lines, "", titleStyle.Render(group.Name), "", "services "+strconv.Itoa(len(group.Indices)), "status   "+groupSummary(*group, m.containers))
+		} else {
+			lines = append(lines, "", mutedStyle.Render("select a container"))
+		}
 	} else {
 		valueWidth := max(10, width-10)
 		lines = append(lines, "", titleStyle.Render(truncate(c.Name, max(10, width-2))), "", "state   "+truncate(c.State, valueWidth), "status  "+truncate(c.Status, valueWidth), "image   "+truncate(c.Image, valueWidth), "id      "+truncate(c.ID, valueWidth), "command "+truncate(c.Command, valueWidth), "ports   "+truncate(c.Ports, valueWidth), "")
@@ -542,10 +600,168 @@ func (m model) readLogsCmd() tea.Cmd {
 }
 
 func (m model) selectedContainer() *container {
-	if m.containerIndex < 0 || m.containerIndex >= len(m.containers) {
+	item := m.selectedItem()
+	if item == nil || item.groupHeader {
 		return nil
 	}
-	return &m.containers[m.containerIndex]
+	return &m.containers[item.containerIndex]
+}
+
+func (m model) selectedItem() *listItem {
+	items := m.listItems()
+	if m.containerIndex < 0 || m.containerIndex >= len(items) {
+		return nil
+	}
+	return &items[m.containerIndex]
+}
+
+func (m model) selectedGroupName() string {
+	item := m.selectedItem()
+	if item == nil || !item.groupHeader {
+		return ""
+	}
+	return item.group
+}
+
+func (m model) containerGroups() []containerGroup {
+	byName := make(map[string][]int)
+	for i, c := range m.containers {
+		name := c.ComposeProject
+		if name == "" {
+			name = "standalone"
+		}
+		byName[name] = append(byName[name], i)
+	}
+	names := make([]string, 0, len(byName))
+	for name := range byName {
+		names = append(names, name)
+	}
+	sort.Slice(names, func(i, j int) bool {
+		if names[i] == "standalone" {
+			return false
+		}
+		if names[j] == "standalone" {
+			return true
+		}
+		return names[i] < names[j]
+	})
+	groups := make([]containerGroup, 0, len(names))
+	for _, name := range names {
+		groups = append(groups, containerGroup{Name: name, Indices: byName[name]})
+	}
+	return groups
+}
+
+func (m model) listItems() []listItem {
+	groups := m.containerGroups()
+	items := make([]listItem, 0, len(m.containers)+len(groups))
+	for _, group := range groups {
+		if group.Name == "standalone" {
+			for _, index := range group.Indices {
+				items = append(items, listItem{group: group.Name, containerIndex: index})
+			}
+			continue
+		}
+		items = append(items, listItem{group: group.Name, groupHeader: true})
+		if m.isExpanded(group.Name) {
+			for _, index := range group.Indices {
+				items = append(items, listItem{group: group.Name, containerIndex: index})
+			}
+		}
+	}
+	return items
+}
+
+func (m model) isExpanded(name string) bool {
+	if m.expanded == nil {
+		return true
+	}
+	expanded, ok := m.expanded[name]
+	return !ok || expanded
+}
+
+func (m *model) syncExpanded() {
+	if m.expanded == nil {
+		m.expanded = make(map[string]bool)
+	}
+	for _, group := range m.containerGroups() {
+		if _, ok := m.expanded[group.Name]; !ok {
+			m.expanded[group.Name] = true
+		}
+	}
+}
+
+func (m model) findContainerItem(id string) int {
+	if id == "" {
+		return -1
+	}
+	for i, item := range m.listItems() {
+		if !item.groupHeader && m.containers[item.containerIndex].ID == id {
+			return i
+		}
+	}
+	return -1
+}
+
+func (m model) findGroupItem(name string) int {
+	for i, item := range m.listItems() {
+		if item.groupHeader && item.group == name {
+			return i
+		}
+	}
+	return -1
+}
+
+func (m model) firstContainerItem() int {
+	for i, item := range m.listItems() {
+		if !item.groupHeader {
+			return i
+		}
+	}
+	return 0
+}
+
+func (m model) selectedGroup() *containerGroup {
+	name := m.selectedGroupName()
+	if name == "" {
+		return nil
+	}
+	for _, group := range m.containerGroups() {
+		if group.Name == name {
+			return &group
+		}
+	}
+	return nil
+}
+
+func (m model) selectedGroupByName(name string) containerGroup {
+	for _, group := range m.containerGroups() {
+		if group.Name == name {
+			return group
+		}
+	}
+	return containerGroup{Name: name}
+}
+
+func groupSummary(group containerGroup, containers []container) string {
+	running := 0
+	for _, index := range group.Indices {
+		if isRunning(containers[index].State) {
+			running++
+		}
+	}
+	return fmt.Sprintf("%d/%d running", running, len(group.Indices))
+}
+
+func (m *model) toggleSelectedGroup() {
+	name := m.selectedGroupName()
+	if name == "" {
+		return
+	}
+	m.syncExpanded()
+	m.expanded[name] = !m.expanded[name]
+	m.err = nil
+	m.status = "ready"
 }
 
 func (m model) selectedID() string {
@@ -655,11 +871,13 @@ func listContainers(profileName string) ([]container, error) {
 			State   string `json:"State"`
 			Status  string `json:"Status"`
 			Ports   string `json:"Ports"`
+			Labels  string `json:"Labels"`
 		}
 		if err := json.Unmarshal(scanner.Bytes(), &item); err != nil {
 			return nil, err
 		}
-		containers = append(containers, container{ID: item.ID, Name: item.Names, Image: item.Image, Command: item.Command, State: item.State, Status: item.Status, Ports: item.Ports})
+		project, service := composeLabels(item.Labels)
+		containers = append(containers, container{ID: item.ID, Name: item.Names, Image: item.Image, Command: item.Command, State: item.State, Status: item.Status, Ports: item.Ports, ComposeProject: project, ComposeService: service})
 	}
 	sort.SliceStable(containers, func(i, j int) bool {
 		if containers[i].State == containers[j].State {
@@ -668,6 +886,23 @@ func listContainers(profileName string) ([]container, error) {
 		return containers[i].State == "running"
 	})
 	return containers, scanner.Err()
+}
+
+func composeLabels(labels string) (string, string) {
+	var project, service string
+	for _, label := range strings.Split(labels, ",") {
+		key, value, ok := strings.Cut(label, "=")
+		if !ok {
+			continue
+		}
+		switch key {
+		case "com.docker.compose.project":
+			project = value
+		case "com.docker.compose.service":
+			service = value
+		}
+	}
+	return project, service
 }
 
 func openLogs(profileName, id string, follow, fromStart bool) (*logReader, error) {

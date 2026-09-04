@@ -198,3 +198,42 @@ func TestRefreshPreservesLogError(t *testing.T) {
 		t.Fatalf("refresh error = %v status %q", got.err, got.status)
 	}
 }
+
+func TestComposeLabels(t *testing.T) {
+	project, service := composeLabels("com.docker.compose.project=ides,com.docker.compose.service=postgres,other=value")
+	if project != "ides" || service != "postgres" {
+		t.Fatalf("compose labels = %q, %q", project, service)
+	}
+}
+
+func TestComposeGroups(t *testing.T) {
+	m := model{containers: []container{
+		{ID: "1", Name: "ides-postgres-1", ComposeProject: "ides", ComposeService: "postgres", State: "running", Status: "Up"},
+		{ID: "2", Name: "ides-api-1", ComposeProject: "ides", ComposeService: "api", State: "exited", Status: "Exited"},
+		{ID: "3", Name: "other", State: "running", Status: "Up"},
+	}}
+	m.syncExpanded()
+	items := m.listItems()
+	if len(items) != 4 || !items[0].groupHeader || items[0].group != "ides" || items[1].containerIndex != 0 || items[2].containerIndex != 1 || items[3].group != "standalone" {
+		t.Fatalf("group items = %#v", items)
+	}
+	if got := groupSummary(m.selectedGroupByName("ides"), m.containers); got != "1/2 running" {
+		t.Fatalf("group summary = %q", got)
+	}
+}
+
+func TestEnterTogglesComposeGroup(t *testing.T) {
+	m := model{containers: []container{{ID: "1", Name: "ides-postgres-1", ComposeProject: "ides", ComposeService: "postgres"}}, expanded: map[string]bool{"ides": true}}
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	got := updated.(model)
+	if got.expanded["ides"] || len(got.listItems()) != 1 || !got.listItems()[0].groupHeader {
+		t.Fatalf("collapsed group = %#v expanded=%v", got.listItems(), got.expanded)
+	}
+}
+
+func TestComposeGroupFitsNarrowPane(t *testing.T) {
+	m := model{containers: []container{{ID: "1", Name: "ides-postgres-1", ComposeProject: "ides", ComposeService: "postgres", State: "running", Status: "Up"}}}
+	if got := lipgloss.Height(m.renderContainers(20, 26)); got != 22 {
+		t.Fatalf("group pane height = %d, want 22", got)
+	}
+}
