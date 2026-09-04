@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"io"
 	"os/exec"
 	"strings"
@@ -170,5 +171,15 @@ func TestReadAllLogReader(t *testing.T) {
 	}
 	if string(output) != "partial" {
 		t.Fatalf("output = %q", output)
+	}
+}
+
+func TestFinishedLogErrorIncludesOutput(t *testing.T) {
+	reader := &logReader{}
+	m := model{reader: reader}
+	updated, _ := m.Update(logsMsg{reader: reader, data: []byte("docker error\n"), done: true, err: errors.New("exit status 1")})
+	got := updated.(model)
+	if got.err == nil || !strings.Contains(got.err.Error(), "docker error") {
+		t.Fatalf("error = %v", got.err)
 	}
 }

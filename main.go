@@ -178,6 +178,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.done {
 			partial := strings.TrimSpace(m.logPartial)
 			m.finishLogs()
+			if msg.err != nil && partial == "" && len(m.logs) > 0 {
+				partial = strings.TrimSpace(m.logs[len(m.logs)-1])
+			}
 			if msg.err != nil && partial != "" {
 				msg.err = fmt.Errorf("%w: %s", msg.err, partial)
 			}
