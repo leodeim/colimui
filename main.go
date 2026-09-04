@@ -134,7 +134,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.logs, m.logPartial, m.logScroll = nil, "", 0
 			if m.selectedID() != "" {
 				m.follow = false
-				m.reader, _ = openLogs(m.currentProfileName(), m.selectedID(), m.follow)
+				var err error
+				m.reader, err = openLogs(m.currentProfileName(), m.selectedID(), m.follow)
+				if err != nil {
+					m.err, m.status = err, "logs failed"
+					return m, nil
+				}
 				return m, m.readLogsCmd()
 			}
 		}
@@ -145,9 +150,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.err, m.status = nil, msg.label+" complete"
 		}
-		return m, tea.Batch(refreshCmd(), tickCmd())
+		return m, tea.Batch(refreshCmd(m.currentProfileName()), tickCmd())
 	case tickMsg:
-		return m, tea.Batch(refreshCmd(), tickCmd())
+		return m, tea.Batch(refreshCmd(m.currentProfileName()), tickCmd())
 	case logsMsg:
 		if msg.reader != m.reader {
 			return m, nil
@@ -176,7 +181,7 @@ func (m model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "y", "enter":
 			if c := m.selectedContainer(); c != nil {
 				m.status = "deleting " + c.Name
-				return m, actionCmd(m.currentProfileName(), c.ID, "delete", "docker", "rm", c.ID)
+				return m, actionCmd(m.currentProfileName(), "delete", "docker", "rm", c.ID)
 			}
 		case "n", "esc", "q":
 			m.confirmDelete = false
@@ -191,6 +196,18 @@ func (m model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	case "tab", "left", "right":
 		m.focus = 1 - m.focus
+	case "[", "]":
+		if len(m.profiles) > 1 {
+			if key == "[" {
+				m.profileIndex = (m.profileIndex + len(m.profiles) - 1) % len(m.profiles)
+			} else {
+				m.profileIndex = (m.profileIndex + 1) % len(m.profiles)
+			}
+			m.stopLogs()
+			m.containers, m.logs, m.logPartial, m.logScroll = nil, nil, "", 0
+			m.status = "switching to " + m.currentProfileName()
+			return m, refreshCmd(m.currentProfileName())
+		}
 	case "up", "k":
 		if m.focus == 0 && m.containerIndex > 0 {
 			m.containerIndex--
@@ -203,21 +220,21 @@ func (m model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "r":
 		m.status = "refreshing"
-		return m, refreshCmd()
+		return m, refreshCmd(m.currentProfileName())
 	case "s":
 		if p := m.currentProfile(); p != nil && !isRunning(p.Status) {
 			m.status = "starting " + p.Name
-			return m, actionCmd(p.Name, "", "start", "colima", "start", "--profile", p.Name)
+			return m, actionCmd(p.Name, "start", "colima", "start", "--profile", p.Name)
 		}
 	case "x":
 		if p := m.currentProfile(); p != nil && isRunning(p.Status) {
 			m.status = "stopping " + p.Name
-			return m, actionCmd(p.Name, "", "stop", "colima", "stop", "--profile", p.Name)
+			return m, actionCmd(p.Name, "stop", "colima", "stop", "--profile", p.Name)
 		}
 	case "t":
 		if c := m.selectedContainer(); c != nil {
 			m.status = "restarting " + c.Name
-			return m, actionCmd(m.currentProfileName(), c.ID, "restart", "docker", "restart", c.ID)
+			return m, actionCmd(m.currentProfileName(), "restart", "docker", "restart", c.ID)
 		}
 	case "enter":
 		if c := m.selectedContainer(); c != nil {
@@ -225,8 +242,8 @@ func (m model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if c.State != "running" {
 				verb = "start"
 			}
-			m.status = verb + "ping " + c.Name
-			return m, actionCmd(m.currentProfileName(), c.ID, verb, "docker", verb, c.ID)
+			m.status = map[string]string{"start": "starting ", "stop": "stopping "}[verb] + c.Name
+			return m, actionCmd(m.currentProfileName(), verb, "docker", verb, c.ID)
 		}
 	case "d":
 		if c := m.selectedContainer(); c != nil {
@@ -270,7 +287,7 @@ func (m model) View() string {
 	right := m.renderDetails(bodyHeight, rightWidth)
 	panes := lipgloss.JoinHorizontal(lipgloss.Top, left, right)
 
-	footer := mutedStyle.Render("↑↓/jk move  tab focus  enter start/stop  t restart  d delete  l reload logs  f follow  r refresh  q quit")
+	footer := mutedStyle.Render("↑↓/jk move  [] profile  tab focus  enter start/stop  t restart  d delete  l logs  f follow  r refresh  q quit")
 	if m.confirmDelete {
 		footer = statusStyle.Render(m.status)
 	} else if m.err != nil {
@@ -363,7 +380,7 @@ func (m *model) scrollLogs(key string) {
 	}
 }
 
-func (m model) reloadSelectedLogs() tea.Cmd {
+func (m *model) reloadSelectedLogs() tea.Cmd {
 	m.stopLogs()
 	m.logs, m.logPartial, m.logScroll = nil, "", 0
 	if m.selectedID() == "" {
@@ -429,19 +446,24 @@ func (m model) currentProfileName() string {
 	return "default"
 }
 
-func refreshCmd() tea.Cmd {
+func refreshCmd(profileName ...string) tea.Cmd {
 	return func() tea.Msg {
 		profiles, err := listProfiles()
 		if err != nil {
 			return refreshMsg{err: err}
 		}
 		name := "default"
-		if len(profiles) > 0 {
+		if len(profileName) > 0 && profileName[0] != "" {
+			name = profileName[0]
+		} else if len(profiles) > 0 {
 			name = profiles[0].Name
 		}
 		containers, dockerErr := listContainers(name)
-		if dockerErr != nil && len(profiles) > 0 && !isRunning(profiles[0].Status) {
-			dockerErr = nil
+		for _, p := range profiles {
+			if p.Name == name && !isRunning(p.Status) {
+				dockerErr = nil
+				break
+			}
 		}
 		return refreshMsg{profiles: profiles, containers: containers, err: dockerErr}
 	}
@@ -451,7 +473,7 @@ func tickCmd() tea.Cmd {
 	return tea.Tick(3*time.Second, func(t time.Time) tea.Msg { return tickMsg(t) })
 }
 
-func actionCmd(profileName, _ string, label, command string, args ...string) tea.Cmd {
+func actionCmd(profileName, label, command string, args ...string) tea.Cmd {
 	return func() tea.Msg {
 		cmd := exec.Command(command, args...)
 		if command == "docker" {
