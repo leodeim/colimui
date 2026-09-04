@@ -316,7 +316,11 @@ func (m model) View() string {
 	right := m.renderDetails(bodyHeight, rightWidth)
 	panes := lipgloss.JoinHorizontal(lipgloss.Top, left, right)
 
-	footer := mutedStyle.Render("↑↓/jk move  [] profile  tab focus  enter start/stop  t restart  d delete  l logs  f follow  r refresh  q quit")
+	focusName := "containers"
+	if m.focus == 1 {
+		focusName = "details"
+	}
+	footer := mutedStyle.Render("focus: " + focusName + "  ↑↓/jk move  [] profile  tab focus  enter start/stop  t restart  d delete  l logs  f follow  r refresh  q quit")
 	if m.confirmDelete {
 		footer = statusStyle.Render(m.status)
 	} else if m.err != nil {
@@ -328,7 +332,11 @@ func (m model) View() string {
 }
 
 func (m model) renderContainers(height, width int) string {
-	lines := []string{"containers  " + mutedStyle.Render(strconv.Itoa(len(m.containers)))}
+	heading := "containers"
+	if m.focus == 0 {
+		heading = selectedStyle.Render("▸ " + heading)
+	}
+	lines := []string{heading + "  " + mutedStyle.Render(strconv.Itoa(len(m.containers)))}
 	if len(m.containers) == 0 {
 		lines = append(lines, "", mutedStyle.Render("no containers"))
 	} else {
@@ -354,12 +362,16 @@ func (m model) renderContainers(height, width int) string {
 			lines = append(lines, line)
 		}
 	}
-	return lipgloss.NewStyle().Width(width).Height(height).MaxHeight(height).Padding(0, 1).Border(lipgloss.RoundedBorder()).BorderForeground(panel).Render(strings.Join(lines, "\n"))
+	return m.renderPane(lines, width, height, m.focus == 0)
 }
 
 func (m model) renderDetails(height, width int) string {
 	c := m.selectedContainer()
-	lines := []string{"details"}
+	heading := "details"
+	if m.focus == 1 {
+		heading = selectedStyle.Render("▸ " + heading)
+	}
+	lines := []string{heading}
 	if c == nil {
 		lines = append(lines, "", mutedStyle.Render("select a container"))
 	} else {
@@ -373,7 +385,15 @@ func (m model) renderDetails(height, width int) string {
 			}
 		}
 	}
-	return lipgloss.NewStyle().Width(width).Height(height).MaxHeight(height).Padding(0, 1).Border(lipgloss.RoundedBorder()).BorderForeground(panel).Render(strings.Join(lines, "\n"))
+	return m.renderPane(lines, width, height, m.focus == 1)
+}
+
+func (m model) renderPane(lines []string, width, height int, focused bool) string {
+	border := panel
+	if focused {
+		border = accent
+	}
+	return lipgloss.NewStyle().Width(width).Height(height).MaxHeight(height).Padding(0, 1).Border(lipgloss.RoundedBorder()).BorderForeground(border).Render(strings.Join(lines, "\n"))
 }
 
 func (m model) visibleLogs(count int) []string {

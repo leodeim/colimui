@@ -71,6 +71,14 @@ func TestMouseWheelScrollsLogs(t *testing.T) {
 	}
 }
 
+func TestTabChangesFocus(t *testing.T) {
+	m := model{focus: 0}
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	if got := updated.(model).focus; got != 1 {
+		t.Fatalf("focus after tab = %d, want 1", got)
+	}
+}
+
 func TestContainerPaneFitsHeight(t *testing.T) {
 	containers := make([]container, 51)
 	for i := range containers {
