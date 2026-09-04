@@ -378,12 +378,16 @@ func (m model) View() string {
 	leftWidth := min(38, max(26, m.width/3))
 	rightWidth := max(20, m.width-leftWidth-1)
 	left := m.renderContainers(bodyHeight, leftWidth)
-	right := m.renderDetails(bodyHeight, rightWidth)
+	detailsHeight := min(10, max(2, bodyHeight/2))
+	logsHeight := max(1, bodyHeight-detailsHeight-2)
+	details := m.renderDetails(detailsHeight, rightWidth)
+	logs := m.renderLogs(logsHeight, rightWidth)
+	right := lipgloss.JoinVertical(lipgloss.Left, details, logs)
 	panes := lipgloss.JoinHorizontal(lipgloss.Top, left, right)
 
 	focusName := "containers"
 	if m.focus == 1 {
-		focusName = "details"
+		focusName = "logs"
 	}
 	footer := mutedStyle.Render("focus: " + focusName + "  ↑↓/jk move  [] profile  tab focus  enter expand/start/stop  t restart  d delete  l logs  f follow  home first  end latest  r refresh  q quit")
 	if m.confirmDelete {
@@ -462,11 +466,7 @@ func (m model) renderContainers(height, width int) string {
 
 func (m model) renderDetails(height, width int) string {
 	c := m.selectedContainer()
-	heading := "details"
-	if m.focus == 1 {
-		heading = selectedStyle.Render("▸ " + heading)
-	}
-	lines := []string{heading}
+	lines := []string{"details"}
 	if c == nil {
 		if group := m.selectedGroup(); group != nil {
 			lines = append(lines, "", titleStyle.Render(group.Name), "", "services "+strconv.Itoa(len(group.Indices)), "status   "+groupSummary(*group, m.containers))
@@ -475,14 +475,24 @@ func (m model) renderDetails(height, width int) string {
 		}
 	} else {
 		valueWidth := max(10, width-10)
-		lines = append(lines, "", titleStyle.Render(truncate(c.Name, max(10, width-2))), "", "state   "+truncate(c.State, valueWidth), "status  "+truncate(c.Status, valueWidth), "image   "+truncate(c.Image, valueWidth), "id      "+truncate(c.ID, valueWidth), "command "+truncate(c.Command, valueWidth), "ports   "+truncate(c.Ports, valueWidth), "")
-		lines = append(lines, logHeadingStyle.Render("logs")+"  "+map[bool]string{true: "following", false: "paused"}[m.follow])
-		if len(m.logs) == 0 {
-			lines = append(lines, mutedStyle.Render("no logs"))
-		} else {
-			for _, line := range m.visibleLogs(height - len(lines) - 1) {
-				lines = append(lines, truncate(line, max(10, width-2)))
-			}
+		lines = append(lines, "", titleStyle.Render(truncate(c.Name, max(10, width-2))), "", "state   "+truncate(c.State, valueWidth), "status  "+truncate(c.Status, valueWidth), "image   "+truncate(c.Image, valueWidth), "id      "+truncate(c.ID, valueWidth), "command "+truncate(c.Command, valueWidth), "ports   "+truncate(c.Ports, valueWidth))
+	}
+	return m.renderPane(lines, width, height, false)
+}
+
+func (m model) renderLogs(height, width int) string {
+	heading := "logs"
+	if m.focus == 1 {
+		heading = selectedStyle.Render("▸ " + heading)
+	}
+	lines := []string{heading + "  " + map[bool]string{true: "following", false: "paused"}[m.follow]}
+	if m.selectedContainer() == nil {
+		lines = append(lines, "", mutedStyle.Render("select a service"))
+	} else if len(m.logs) == 0 {
+		lines = append(lines, mutedStyle.Render("no logs"))
+	} else {
+		for _, line := range m.visibleLogs(max(0, height-len(lines)-1)) {
+			lines = append(lines, truncate(line, max(10, width-2)))
 		}
 	}
 	return m.renderPane(lines, width, height, m.focus == 1)

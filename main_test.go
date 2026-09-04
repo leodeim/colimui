@@ -106,6 +106,27 @@ func TestDetailsPanePreservesBorder(t *testing.T) {
 	}
 }
 
+func TestDetailsPaneIsNotSelectable(t *testing.T) {
+	m := model{
+		focus:      1,
+		containers: []container{{ID: "abc", Name: "test", State: "running", Status: "Up"}},
+	}
+	if view := m.renderDetails(10, 80); strings.Contains(view, "▸ details") {
+		t.Fatal("details pane shows a focus marker")
+	}
+}
+
+func TestLogsPaneShowsFocus(t *testing.T) {
+	m := model{
+		focus:      1,
+		containers: []container{{ID: "abc", Name: "test", State: "running", Status: "Up"}},
+		logs:       []string{"hello"},
+	}
+	if view := m.renderLogs(8, 80); !strings.Contains(view, "▸ logs") {
+		t.Fatal("logs pane is missing its focus marker")
+	}
+}
+
 func TestVisibleLogsAtStart(t *testing.T) {
 	m := model{logs: []string{"first", "second", "third", "last"}, logScroll: 4}
 	got := m.visibleLogs(2)
