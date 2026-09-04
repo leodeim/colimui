@@ -111,6 +111,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		return m.key(msg)
+	case tea.MouseMsg:
+		return m.mouse(msg)
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 	case refreshMsg:
@@ -170,6 +172,33 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		return m, m.readLogsCmd()
+	}
+	return m, nil
+}
+
+func (m model) mouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	event := tea.MouseEvent(msg)
+	if event.Action != tea.MouseActionPress || !event.IsWheel() {
+		return m, nil
+	}
+	leftWidth := min(38, max(26, m.width/3))
+	if event.X < leftWidth {
+		if event.Button == tea.MouseButtonWheelUp && m.containerIndex > 0 {
+			m.containerIndex--
+			return m, m.reloadSelectedLogs()
+		}
+		if event.Button == tea.MouseButtonWheelDown && m.containerIndex < len(m.containers)-1 {
+			m.containerIndex++
+			return m, m.reloadSelectedLogs()
+		}
+		return m, nil
+	}
+	m.focus = 1
+	switch event.Button {
+	case tea.MouseButtonWheelUp:
+		m.logScroll = min(len(m.logs), m.logScroll+3)
+	case tea.MouseButtonWheelDown:
+		m.logScroll = max(0, m.logScroll-3)
 	}
 	return m, nil
 }
@@ -621,7 +650,7 @@ func min(a, b int) int {
 }
 
 func main() {
-	if _, err := tea.NewProgram(initialModel(), tea.WithAltScreen()).Run(); err != nil {
+	if _, err := tea.NewProgram(initialModel(), tea.WithAltScreen(), tea.WithMouseCellMotion()).Run(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}

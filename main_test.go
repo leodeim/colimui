@@ -4,6 +4,8 @@ import (
 	"os/exec"
 	"strings"
 	"testing"
+
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 func TestDockerContext(t *testing.T) {
@@ -49,4 +51,21 @@ func TestSystemProfileAndContainers(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = containers
+}
+
+func TestMouseWheelScrollsLogs(t *testing.T) {
+	m := model{width: 120, height: 24, logs: []string{"one", "two", "three", "four"}}
+	updated, _ := m.Update(tea.MouseMsg(tea.MouseEvent{
+		X: 80, Action: tea.MouseActionPress, Button: tea.MouseButtonWheelUp,
+	}))
+	got := updated.(model)
+	if got.logScroll != 3 || got.focus != 1 {
+		t.Fatalf("wheel up = scroll %d, focus %d", got.logScroll, got.focus)
+	}
+	updated, _ = got.Update(tea.MouseMsg(tea.MouseEvent{
+		X: 80, Action: tea.MouseActionPress, Button: tea.MouseButtonWheelDown,
+	}))
+	if updated.(model).logScroll != 0 {
+		t.Fatalf("wheel down = scroll %d", updated.(model).logScroll)
+	}
 }
