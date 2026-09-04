@@ -183,3 +183,18 @@ func TestFinishedLogErrorIncludesOutput(t *testing.T) {
 		t.Fatalf("error = %v", got.err)
 	}
 }
+
+func TestRefreshPreservesLogError(t *testing.T) {
+	containers := []container{{ID: "id", Name: "test", State: "running", Status: "Up"}}
+	m := model{
+		profiles:   []profile{{Name: "default", Status: "Running"}},
+		containers: containers,
+		err:        errors.New("docker error"),
+		status:     "logs failed",
+	}
+	updated, _ := m.Update(refreshMsg{profiles: m.profiles, containers: containers})
+	got := updated.(model)
+	if got.err == nil || got.status != "logs failed" {
+		t.Fatalf("refresh error = %v status %q", got.err, got.status)
+	}
+}

@@ -127,6 +127,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width, m.height = msg.Width, msg.Height
 	case refreshMsg:
 		oldID := m.selectedID()
+		previousErr, previousStatus := m.err, m.status
 		m.profiles, m.containers, m.err = msg.profiles, msg.containers, msg.err
 		if m.profileIndex >= len(m.profiles) {
 			m.profileIndex = max(0, len(m.profiles)-1)
@@ -138,6 +139,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.err != nil {
 			m.status = "connection error"
+		} else if oldID == m.selectedID() && previousStatus == "logs failed" && previousErr != nil {
+			m.err, m.status = previousErr, previousStatus
 		} else {
 			m.status = "ready"
 		}
@@ -494,12 +497,16 @@ func (m *model) reloadSelectedLogs(all ...bool) tea.Cmd {
 	m.stopLogs()
 	m.logs, m.logPartial, m.logScroll = nil, "", 0
 	m.logFromStart = fromStart
+	m.err = nil
+	if m.status == "logs failed" {
+		m.status = "ready"
+	}
 	if m.selectedID() == "" {
 		return nil
 	}
 	reader, err := openLogs(m.currentProfileName(), m.selectedID(), m.follow, fromStart)
 	if err != nil {
-		m.err = err
+		m.err, m.status = err, "logs failed"
 		return nil
 	}
 	m.reader = reader
