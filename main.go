@@ -68,6 +68,8 @@ type logReader struct {
 	stderr bytes.Buffer
 }
 
+const maxLogLines = 10000
+
 var (
 	accent = lipgloss.Color("#86EFAC")
 	muted  = lipgloss.Color("#94A3B8")
@@ -100,6 +102,7 @@ type model struct {
 	logs           []string
 	logPartial     string
 	logScroll      int
+	logFromStart   bool
 	follow         bool
 	reader         *logReader
 }
@@ -138,11 +141,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if oldID != m.selectedID() {
 			m.stopLogs()
-			m.logs, m.logPartial, m.logScroll = nil, "", 0
+			m.logs, m.logPartial, m.logScroll, m.logFromStart = nil, "", 0, false
 			if m.selectedID() != "" {
 				m.follow = false
 				var err error
-				m.reader, err = openLogs(m.currentProfileName(), m.selectedID(), m.follow)
+				m.reader, err = openLogs(m.currentProfileName(), m.selectedID(), m.follow, false)
 				if err != nil {
 					m.err, m.status = err, "logs failed"
 					return m, nil
@@ -171,6 +174,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.err, m.status = msg.err, "logs failed"
 		}
 		if msg.done {
+			if m.logFromStart {
+				m.logScroll = len(m.logs)
+				m.logFromStart = false
+			}
 			if m.follow && msg.err == nil {
 				return m, m.readLogsCmd()
 			}
@@ -238,7 +245,7 @@ func (m model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.profileIndex = (m.profileIndex + 1) % len(m.profiles)
 			}
 			m.stopLogs()
-			m.containers, m.logs, m.logPartial, m.logScroll = nil, nil, "", 0
+			m.containers, m.logs, m.logPartial, m.logScroll, m.logFromStart = nil, nil, "", 0, false
 			m.status = "switching to " + m.currentProfileName()
 			return m, refreshCmd(m.currentProfileName())
 		}
@@ -293,7 +300,11 @@ func (m model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "f":
 		m.follow = !m.follow
 		return m, m.reloadSelectedLogs()
-	case "pgup", "pgdown", "home", "end":
+	case "home":
+		m.follow = false
+		m.status = "loading all logs"
+		return m, m.reloadSelectedLogs(true)
+	case "pgup", "pgdown", "end":
 		m.scrollLogs(key)
 	}
 	return m, nil
@@ -329,7 +340,7 @@ func (m model) View() string {
 	if m.focus == 1 {
 		focusName = "details"
 	}
-	footer := mutedStyle.Render("focus: " + focusName + "  ↑↓/jk move  [] profile  tab focus  enter start/stop  t restart  d delete  l logs  f follow  r refresh  q quit")
+	footer := mutedStyle.Render("focus: " + focusName + "  ↑↓/jk move  [] profile  tab focus  enter start/stop  t restart  d delete  l logs  f follow  home first  end latest  r refresh  q quit")
 	if m.confirmDelete {
 		footer = statusStyle.Render(m.status)
 	} else if m.err != nil {
@@ -418,6 +429,9 @@ func (m model) visibleLogs(count int) []string {
 	if count <= 0 || len(m.logs) == 0 {
 		return nil
 	}
+	if m.logScroll >= len(m.logs) {
+		return m.logs[:min(count, len(m.logs))]
+	}
 	end := len(m.logs) - m.logScroll
 	if end < 0 {
 		end = 0
@@ -433,8 +447,8 @@ func (m *model) appendLogs(data string) {
 	for _, line := range parts[:len(parts)-1] {
 		m.logs = append(m.logs, strings.TrimSuffix(line, "\r"))
 	}
-	if len(m.logs) > 1000 {
-		m.logs = m.logs[len(m.logs)-1000:]
+	if len(m.logs) > maxLogLines {
+		m.logs = m.logs[len(m.logs)-maxLogLines:]
 	}
 	if m.logScroll == 0 {
 		return
@@ -455,13 +469,15 @@ func (m *model) scrollLogs(key string) {
 	}
 }
 
-func (m *model) reloadSelectedLogs() tea.Cmd {
+func (m *model) reloadSelectedLogs(all ...bool) tea.Cmd {
+	fromStart := len(all) > 0 && all[0]
 	m.stopLogs()
 	m.logs, m.logPartial, m.logScroll = nil, "", 0
+	m.logFromStart = fromStart
 	if m.selectedID() == "" {
 		return nil
 	}
-	reader, err := openLogs(m.currentProfileName(), m.selectedID(), m.follow)
+	reader, err := openLogs(m.currentProfileName(), m.selectedID(), m.follow, fromStart)
 	if err != nil {
 		m.err = err
 		return nil
@@ -622,9 +638,12 @@ func listContainers(profileName string) ([]container, error) {
 	return containers, scanner.Err()
 }
 
-func openLogs(profileName, id string, follow bool) (*logReader, error) {
+func openLogs(profileName, id string, follow, fromStart bool) (*logReader, error) {
 	ctx, cancel := context.WithCancel(context.Background())
-	args := []string{"logs", "--tail", "200"}
+	args := []string{"logs"}
+	if !fromStart {
+		args = append(args, "--tail", "200")
+	}
 	if follow {
 		args = append(args, "--follow")
 	}

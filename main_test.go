@@ -103,3 +103,11 @@ func TestDetailsPanePreservesBorder(t *testing.T) {
 		t.Fatal("details pane is missing its bottom border")
 	}
 }
+
+func TestVisibleLogsAtStart(t *testing.T) {
+	m := model{logs: []string{"first", "second", "third", "last"}, logScroll: 4}
+	got := m.visibleLogs(2)
+	if len(got) != 2 || got[0] != "first" || got[1] != "second" {
+		t.Fatalf("logs at start = %#v", got)
+	}
+}
