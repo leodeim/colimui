@@ -17,6 +17,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/termenv"
 )
 
 type profile struct {
@@ -68,17 +69,21 @@ type logReader struct {
 }
 
 var (
-	accent = lipgloss.Color("86EFAC")
-	muted  = lipgloss.Color("94A3B8")
-	red    = lipgloss.Color("FCA5A5")
-	yellow = lipgloss.Color("FDE68A")
-	panel  = lipgloss.Color("334155")
+	accent = lipgloss.Color("#86EFAC")
+	muted  = lipgloss.Color("#94A3B8")
+	red    = lipgloss.Color("#FCA5A5")
+	yellow = lipgloss.Color("#FDE68A")
+	panel  = lipgloss.Color("#334155")
 
-	titleStyle    = lipgloss.NewStyle().Bold(true).Foreground(accent)
-	mutedStyle    = lipgloss.NewStyle().Foreground(muted)
-	selectedStyle = lipgloss.NewStyle().Foreground(accent).Bold(true)
-	statusStyle   = lipgloss.NewStyle().Foreground(yellow)
-	errorStyle    = lipgloss.NewStyle().Foreground(red)
+	titleStyle       = lipgloss.NewStyle().Bold(true).Foreground(accent)
+	mutedStyle       = lipgloss.NewStyle().Foreground(muted)
+	selectedStyle    = lipgloss.NewStyle().Foreground(accent).Bold(true)
+	selectedRowStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#F8FAFC")).Background(lipgloss.Color("#14532D")).Bold(true)
+	runningStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("#34D399"))
+	stoppedStyle     = lipgloss.NewStyle().Foreground(muted)
+	logHeadingStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("#7DD3FC")).Bold(true)
+	statusStyle      = lipgloss.NewStyle().Foreground(yellow)
+	errorStyle       = lipgloss.NewStyle().Foreground(red)
 )
 
 type model struct {
@@ -305,7 +310,11 @@ func (m model) View() string {
 		if isRunning(p.Status) {
 			indicator = "●"
 		}
-		header += "  " + statusStyle.Render(indicator+" "+strings.ToLower(p.Status))
+		profileStatus := statusStyle
+		if isRunning(p.Status) {
+			profileStatus = runningStyle
+		}
+		header += "  " + profileStatus.Render(indicator+" "+strings.ToLower(p.Status))
 		header += "  " + mutedStyle.Render(fmt.Sprintf("%d cpu · %s ram · %s", p.CPUs, humanBytes(p.Memory), humanBytes(p.Disk)))
 	}
 
@@ -353,11 +362,19 @@ func (m model) renderContainers(height, width int) string {
 			if c.State == "running" {
 				marker = "●"
 			}
-			line := fmt.Sprintf("%s %-*s %s", marker, nameWidth, truncate(c.Name, nameWidth), truncate(c.Status, statusWidth))
+			containerStatus := truncate(c.Status, statusWidth)
+			line := fmt.Sprintf("%s %-*s %s", marker, nameWidth, truncate(c.Name, nameWidth), containerStatus)
 			if i == m.containerIndex {
-				line = selectedStyle.Render("> " + line)
+				line = selectedRowStyle.Render("> " + line)
 			} else {
-				line = "  " + line
+				if c.State == "running" {
+					marker = runningStyle.Render(marker)
+					containerStatus = runningStyle.Render(containerStatus)
+				} else {
+					marker = stoppedStyle.Render(marker)
+					containerStatus = stoppedStyle.Render(containerStatus)
+				}
+				line = "  " + fmt.Sprintf("%s %-*s %s", marker, nameWidth, truncate(c.Name, nameWidth), containerStatus)
 			}
 			lines = append(lines, line)
 		}
@@ -377,7 +394,7 @@ func (m model) renderDetails(height, width int) string {
 	} else {
 		valueWidth := max(10, width-10)
 		lines = append(lines, "", titleStyle.Render(truncate(c.Name, max(10, width-2))), "", "state   "+truncate(c.State, valueWidth), "status  "+truncate(c.Status, valueWidth), "image   "+truncate(c.Image, valueWidth), "id      "+truncate(c.ID, valueWidth), "command "+truncate(c.Command, valueWidth), "ports   "+truncate(c.Ports, valueWidth), "")
-		lines = append(lines, "logs  "+map[bool]string{true: "following", false: "paused"}[m.follow])
+		lines = append(lines, logHeadingStyle.Render("logs")+"  "+map[bool]string{true: "following", false: "paused"}[m.follow])
 		if len(m.logs) == 0 {
 			lines = append(lines, mutedStyle.Render("no logs"))
 		} else {
@@ -679,6 +696,9 @@ func min(a, b int) int {
 }
 
 func main() {
+	if os.Getenv("COLIMUI_NO_COLOR") != "1" {
+		lipgloss.SetColorProfile(termenv.TrueColor)
+	}
 	if _, err := tea.NewProgram(initialModel(), tea.WithAltScreen(), tea.WithMouseCellMotion()).Run(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
