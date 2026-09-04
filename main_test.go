@@ -92,6 +92,25 @@ func TestContainerPaneFitsHeight(t *testing.T) {
 	}
 }
 
+func TestStoppedProfileShowsStartHint(t *testing.T) {
+	m := model{profiles: []profile{{Name: "default", Status: "Stopped"}}}
+	view := m.renderContainers(10, 38)
+	if !strings.Contains(view, "colima is stopped") || !strings.Contains(view, "press s to start") {
+		t.Fatalf("stopped profile view = %q", view)
+	}
+}
+
+func TestStartKeyWorksWithoutProfileRecord(t *testing.T) {
+	m := model{status: "ready"}
+	updated, cmd := m.key(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
+	if cmd == nil {
+		t.Fatal("start key returned no command")
+	}
+	if got := updated.(model).status; got != "starting default" {
+		t.Fatalf("start status = %q", got)
+	}
+}
+
 func TestDetailsPanePreservesBorder(t *testing.T) {
 	m := model{
 		containers: []container{{ID: "abc", Name: "test", State: "running", Status: "Up", Image: "alpine"}},

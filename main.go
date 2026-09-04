@@ -306,9 +306,10 @@ func (m model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.status = "refreshing"
 		return m, refreshCmd(m.currentProfileName())
 	case "s":
-		if p := m.currentProfile(); p != nil && !isRunning(p.Status) {
-			m.status = "starting " + p.Name
-			return m, actionCmd(p.Name, "start", "colima", "start", "--profile", p.Name)
+		if p := m.currentProfile(); p == nil || !isRunning(p.Status) {
+			name := m.currentProfileName()
+			m.status = "starting " + name
+			return m, actionCmd(name, "start", "colima", "start", "--profile", name)
 		}
 	case "x":
 		if p := m.currentProfile(); p != nil && isRunning(p.Status) {
@@ -389,7 +390,7 @@ func (m model) View() string {
 	if m.focus == 1 {
 		focusName = "logs"
 	}
-	footer := mutedStyle.Render("focus: " + focusName + "  ↑↓/jk move  [] profile  tab focus  enter expand/start/stop  t restart  d delete  l logs  f follow  home first  end latest  r refresh  q quit")
+	footer := mutedStyle.Render("focus: " + focusName + "  ↑↓/jk move  [] profile  s start  x stop  tab focus  enter expand/start/stop  t restart  d delete  l logs  f follow  home first  end latest  r refresh  q quit")
 	if m.confirmDelete {
 		footer = statusStyle.Render(m.status)
 	} else if m.err != nil {
@@ -408,7 +409,12 @@ func (m model) renderContainers(height, width int) string {
 	lines := []string{heading + "  " + mutedStyle.Render(strconv.Itoa(len(m.containers)))}
 	items := m.listItems()
 	if len(items) == 0 {
-		lines = append(lines, "", mutedStyle.Render("no containers"))
+		lines = append(lines, "")
+		if p := m.currentProfile(); p != nil && !isRunning(p.Status) {
+			lines = append(lines, mutedStyle.Render("colima is stopped"), statusStyle.Render("press s to start"))
+		} else {
+			lines = append(lines, mutedStyle.Render("no containers"))
+		}
 	} else {
 		rowCount := max(1, height-1)
 		start := max(0, m.containerIndex-rowCount+1)
