@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -61,11 +62,12 @@ type logsMsg struct {
 }
 
 type logReader struct {
-	ctx    context.Context
-	cancel context.CancelFunc
-	out    io.ReadCloser
-	cmd    *exec.Cmd
-	stderr bytes.Buffer
+	cancel   context.CancelFunc
+	out      io.ReadCloser
+	cmd      *exec.Cmd
+	waitDone chan struct{}
+	waitMu   sync.Mutex
+	waitErr  error
 }
 
 const maxLogLines = 10000
@@ -174,12 +176,17 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.err, m.status = msg.err, "logs failed"
 		}
 		if msg.done {
+			partial := strings.TrimSpace(m.logPartial)
+			m.finishLogs()
+			if msg.err != nil && partial != "" {
+				msg.err = fmt.Errorf("%w: %s", msg.err, partial)
+			}
+			if msg.err != nil && !errors.Is(msg.err, io.EOF) {
+				m.err, m.status = msg.err, "logs failed"
+			}
 			if m.logFromStart {
 				m.logScroll = len(m.logs)
 				m.logFromStart = false
-			}
-			if m.follow && msg.err == nil {
-				return m, m.readLogsCmd()
 			}
 			return m, nil
 		}
@@ -365,7 +372,7 @@ func (m model) renderContainers(height, width int) string {
 		start = min(start, max(0, len(m.containers)-rowCount))
 		end := min(len(m.containers), start+rowCount)
 		rowWidth := max(8, width-4)
-		nameWidth := min(18, max(8, rowWidth-15))
+		nameWidth := min(18, max(10, rowWidth-9))
 		statusWidth := max(4, rowWidth-nameWidth-5)
 		for i := start; i < end; i++ {
 			c := m.containers[i]
@@ -374,7 +381,7 @@ func (m model) renderContainers(height, width int) string {
 				marker = "●"
 			}
 			containerStatus := truncate(c.Status, statusWidth)
-			line := fmt.Sprintf("%s %-*s %s", marker, nameWidth, truncate(c.Name, nameWidth), containerStatus)
+			line := fmt.Sprintf("%s %-*s %s", marker, nameWidth, middleTruncate(c.Name, nameWidth), containerStatus)
 			if i == m.containerIndex {
 				line = selectedRowStyle.Render("> " + line)
 			} else {
@@ -385,7 +392,7 @@ func (m model) renderContainers(height, width int) string {
 					marker = stoppedStyle.Render(marker)
 					containerStatus = stoppedStyle.Render(containerStatus)
 				}
-				line = "  " + fmt.Sprintf("%s %-*s %s", marker, nameWidth, truncate(c.Name, nameWidth), containerStatus)
+				line = "  " + fmt.Sprintf("%s %-*s %s", marker, nameWidth, middleTruncate(c.Name, nameWidth), containerStatus)
 			}
 			lines = append(lines, line)
 		}
@@ -456,6 +463,16 @@ func (m *model) appendLogs(data string) {
 	m.logScroll = min(m.logScroll, max(0, len(m.logs)-1))
 }
 
+func (m *model) finishLogs() {
+	if m.logPartial != "" {
+		m.logs = append(m.logs, strings.TrimSuffix(m.logPartial, "\r"))
+		m.logPartial = ""
+	}
+	if len(m.logs) > maxLogLines {
+		m.logs = m.logs[len(m.logs)-maxLogLines:]
+	}
+}
+
 func (m *model) scrollLogs(key string) {
 	switch key {
 	case "pgup":
@@ -504,6 +521,11 @@ func (m model) readLogsCmd() tea.Cmd {
 		n, err := r.out.Read(buf)
 		if n > 0 {
 			return logsMsg{reader: r, data: buf[:n], err: err}
+		}
+		if errors.Is(err, io.EOF) {
+			err = r.exitError()
+		} else if err == nil {
+			err = r.exitError()
 		}
 		return logsMsg{reader: r, done: true, err: err}
 	}
@@ -650,18 +672,40 @@ func openLogs(profileName, id string, follow, fromStart bool) (*logReader, error
 	args = append(args, id)
 	cmd := exec.CommandContext(ctx, "docker", args...)
 	cmd.Env = append(os.Environ(), "DOCKER_CONTEXT="+dockerContext(profileName))
-	out, err := cmd.StdoutPipe()
+	reader, err := startLogReader(cmd, cancel)
 	if err != nil {
 		cancel()
 		return nil, err
 	}
-	reader := &logReader{ctx: ctx, cancel: cancel, out: out, cmd: cmd}
-	cmd.Stderr = &reader.stderr
+	return reader, nil
+}
+
+func startLogReader(cmd *exec.Cmd, cancel context.CancelFunc) (*logReader, error) {
+	out, in := io.Pipe()
+	reader := &logReader{cancel: cancel, out: out, cmd: cmd, waitDone: make(chan struct{})}
+	cmd.Stdout = in
+	cmd.Stderr = in
 	if err := cmd.Start(); err != nil {
-		cancel()
+		_ = out.Close()
+		_ = in.Close()
 		return nil, err
 	}
+	go func() {
+		err := cmd.Wait()
+		reader.waitMu.Lock()
+		reader.waitErr = err
+		reader.waitMu.Unlock()
+		close(reader.waitDone)
+		_ = in.Close()
+	}()
 	return reader, nil
+}
+
+func (r *logReader) exitError() error {
+	<-r.waitDone
+	r.waitMu.Lock()
+	defer r.waitMu.Unlock()
+	return r.waitErr
 }
 
 func dockerContext(profileName string) string {
@@ -698,6 +742,16 @@ func truncate(value string, width int) string {
 		return value
 	}
 	return value[:width-3] + "..."
+}
+
+func middleTruncate(value string, width int) string {
+	value = strings.ReplaceAll(value, "\n", " ")
+	if width < 4 || len(value) <= width {
+		return value
+	}
+	left := (width - 3 + 1) / 2
+	right := width - 3 - left
+	return value[:left] + "..." + value[len(value)-right:]
 }
 
 func max(a, b int) int {
