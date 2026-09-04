@@ -332,12 +332,20 @@ func (m model) renderContainers(height, width int) string {
 	if len(m.containers) == 0 {
 		lines = append(lines, "", mutedStyle.Render("no containers"))
 	} else {
-		for i, c := range m.containers {
+		rowCount := max(1, height-1)
+		start := max(0, m.containerIndex-rowCount+1)
+		start = min(start, max(0, len(m.containers)-rowCount))
+		end := min(len(m.containers), start+rowCount)
+		rowWidth := max(8, width-4)
+		nameWidth := min(18, max(8, rowWidth-15))
+		statusWidth := max(4, rowWidth-nameWidth-5)
+		for i := start; i < end; i++ {
+			c := m.containers[i]
 			marker := "○"
 			if c.State == "running" {
 				marker = "●"
 			}
-			line := fmt.Sprintf("%s %-18s %s", marker, truncate(c.Name, 18), truncate(c.Status, max(8, width-24)))
+			line := fmt.Sprintf("%s %-*s %s", marker, nameWidth, truncate(c.Name, nameWidth), truncate(c.Status, statusWidth))
 			if i == m.containerIndex {
 				line = selectedStyle.Render("> " + line)
 			} else {
@@ -346,7 +354,7 @@ func (m model) renderContainers(height, width int) string {
 			lines = append(lines, line)
 		}
 	}
-	return lipgloss.NewStyle().Width(width).Height(height).Padding(0, 1).Border(lipgloss.RoundedBorder()).BorderForeground(panel).Render(strings.Join(lines, "\n"))
+	return lipgloss.NewStyle().Width(width).Height(height).MaxHeight(height).Padding(0, 1).Border(lipgloss.RoundedBorder()).BorderForeground(panel).Render(strings.Join(lines, "\n"))
 }
 
 func (m model) renderDetails(height, width int) string {
@@ -365,7 +373,7 @@ func (m model) renderDetails(height, width int) string {
 			}
 		}
 	}
-	return lipgloss.NewStyle().Width(width).Height(height).Padding(0, 1).Border(lipgloss.RoundedBorder()).BorderForeground(panel).Render(strings.Join(lines, "\n"))
+	return lipgloss.NewStyle().Width(width).Height(height).MaxHeight(height).Padding(0, 1).Border(lipgloss.RoundedBorder()).BorderForeground(panel).Render(strings.Join(lines, "\n"))
 }
 
 func (m model) visibleLogs(count int) []string {

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 func TestDockerContext(t *testing.T) {
@@ -67,5 +68,16 @@ func TestMouseWheelScrollsLogs(t *testing.T) {
 	}))
 	if updated.(model).logScroll != 0 {
 		t.Fatalf("wheel down = scroll %d", updated.(model).logScroll)
+	}
+}
+
+func TestContainerPaneFitsHeight(t *testing.T) {
+	containers := make([]container, 51)
+	for i := range containers {
+		containers[i] = container{Name: "colimui-test", State: "running", Status: "Up"}
+	}
+	m := model{containers: containers, containerIndex: 50}
+	if got := lipgloss.Height(m.renderContainers(20, 38)); got != 20 {
+		t.Fatalf("container pane height = %d, want 20", got)
 	}
 }
