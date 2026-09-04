@@ -712,6 +712,9 @@ func startLogReader(cmd *exec.Cmd, cancel context.CancelFunc) (*logReader, error
 }
 
 func (r *logReader) exitError() error {
+	if r.waitDone == nil {
+		return nil
+	}
 	<-r.waitDone
 	r.waitMu.Lock()
 	defer r.waitMu.Unlock()
