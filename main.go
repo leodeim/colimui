@@ -194,7 +194,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.err, m.status = nil, msg.label+" complete"
 		}
-		return m, tea.Batch(refreshCmd(m.currentProfileName()), tickCmd())
+		return m, refreshCmd(m.currentProfileName())
 	case tickMsg:
 		return m, tea.Batch(refreshCmd(m.currentProfileName()), tickCmd())
 	case logsMsg:
