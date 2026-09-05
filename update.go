@@ -110,8 +110,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if oldID != m.selectedID() {
 			m.stopLogs()
 			m.logs, m.logPartial, m.logScroll, m.logFromStart, m.logBytes, m.logsTruncated, m.partialTrimmed = nil, "", 0, false, 0, false, false
+			m.follow = false
 			if m.selectedID() != "" {
-				m.follow = false
 				var err error
 				m.reader, err = m.currentBackend().OpenLogs(m.currentProfileName(), m.selectedID(), m.follow, false)
 				if err != nil {

@@ -389,6 +389,35 @@ func TestLogsPaneShowsFocus(t *testing.T) {
 	}
 }
 
+func TestLogsPaneClipsLongRowsToItsAllocatedSize(t *testing.T) {
+	m := model{
+		focus:      1,
+		containers: []container{{ID: "postgres", Name: "postgres", State: "running", Status: "Up"}},
+		logs: []string{
+			strings.Repeat("2026-09-05 16:32:24.400 UTC [1] LOG: PostgreSQL startup ", 4),
+			strings.Repeat("database system is ready to accept connections ", 4),
+		},
+	}
+	view := m.renderLogs(10, 80)
+	if got, want := lipgloss.Height(view), 12; got != want {
+		t.Fatalf("long log pane height = %d, want %d", got, want)
+	}
+	if got := lipgloss.Width(view); got > 80 {
+		t.Fatalf("long log pane width = %d, want at most 80", got)
+	}
+}
+
+func TestSelectingAComposeGroupPausesLogs(t *testing.T) {
+	m := model{
+		follow:     true,
+		containers: []container{{ID: "postgres", Name: "postgres", ComposeProject: "ides", State: "running"}},
+		expanded:   map[string]bool{"ides": true},
+	}
+	if cmd := m.reloadSelectedLogs(); cmd != nil || m.follow {
+		t.Fatal("group selection left log following enabled")
+	}
+}
+
 func TestVisibleLogsAtStart(t *testing.T) {
 	m := model{logs: []string{"first", "second", "third", "last"}, logScroll: 4}
 	got := m.visibleLogs(2)

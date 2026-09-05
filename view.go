@@ -339,9 +339,16 @@ func (m model) renderLogs(height, width int) string {
 			lines = append(lines, mutedStyle.Render("no matching logs"))
 		}
 		for _, line := range m.visibleLogs(max(0, height-len(lines)-1)) {
-			lines = append(lines, truncate(m.logText(line), max(10, width-2)))
+			lines = append(lines, ansi.Truncate(m.logText(line), max(1, width-4), ""))
 		}
 	}
+	// Lipgloss sets a minimum height; it does not clip wrapped text. Constrain
+	// every row and the row count so long container logs cannot expand the pane.
+	fitted := make([]string, min(len(lines), max(0, height)))
+	for i := range fitted {
+		fitted[i] = ansi.Truncate(lines[i], max(1, width-4), "")
+	}
+	lines = fitted
 	return m.renderPane(lines, width, height, m.focus == 1)
 }
 

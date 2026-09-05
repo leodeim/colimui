@@ -111,6 +111,7 @@ func (m *model) reloadSelectedLogs(all ...bool) tea.Cmd {
 		m.status = "ready"
 	}
 	if m.selectedID() == "" {
+		m.follow = false
 		return nil
 	}
 	reader, err := m.currentBackend().OpenLogs(m.currentProfileName(), m.selectedID(), m.follow, fromStart)
