@@ -55,7 +55,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else if items := m.listItems(); m.containerIndex >= len(items) {
 			m.containerIndex = len(items) - 1
 		}
-		if m.err != nil {
+		if m.activeActionID != 0 {
+			// Keep the in-progress action visible while background refreshes run.
+		} else if m.err != nil {
 			m.status = "connection error"
 		} else if oldID == m.selectedID() && previousStatus == "logs failed" && previousErr != nil {
 			m.err, m.status = previousErr, previousStatus
@@ -158,6 +160,9 @@ func (m model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if key == "q" || key == "ctrl+c" {
 			m.stopLogs()
 			return m, tea.Quit
+		}
+		if isSafeWhileAction(key) {
+			return m.keyWhileAction(msg)
 		}
 		return m, nil
 	}
@@ -262,6 +267,23 @@ func (m model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.scrollLogs(key)
 	}
 	return m, nil
+}
+
+func isSafeWhileAction(key string) bool {
+	switch key {
+	case "up", "k", "down", "j", "tab", "left", "right", "pgup", "pgdown", "end":
+		return true
+	}
+	return false
+}
+
+func (m model) keyWhileAction(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	actionID := m.activeActionID
+	m.activeActionID = 0
+	updated, command := m.key(msg)
+	next := updated.(model)
+	next.activeActionID = actionID
+	return next, command
 }
 
 func (m model) actionMenuItems() []actionMenuItem {

@@ -121,6 +121,22 @@ func TestActionIgnoresStaleCompletion(t *testing.T) {
 	}
 }
 
+func TestActiveActionAllowsNavigationAndKeepsStatus(t *testing.T) {
+	m := newModel(&fakeBackend{}, func() tea.Cmd { return nil })
+	m.activeActionID = 1
+	m.status = "stopping api"
+	m.containers = []container{{ID: "one", Name: "api", State: "running"}, {ID: "two", Name: "worker", State: "running"}}
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	got := updated.(model)
+	if got.containerIndex != 1 || got.activeActionID != 1 {
+		t.Fatalf("navigation during action = index %d active %d", got.containerIndex, got.activeActionID)
+	}
+	updated, _ = got.Update(refreshMsg{profiles: []profile{{Name: "default", Status: "Running"}}, containers: got.containers})
+	if got := updated.(model); got.status != "stopping api" {
+		t.Fatalf("refresh replaced active action status with %q", got.status)
+	}
+}
+
 func TestHumanBytes(t *testing.T) {
 	for _, test := range []struct {
 		input int64
