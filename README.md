@@ -32,6 +32,12 @@ go install github.com/leodeim/colimui@latest
 colimui
 ```
 
+For development with automatic rebuilds and restarts when Go files change:
+
+```sh
+make dev
+```
+
 ### Update
 
 ```sh

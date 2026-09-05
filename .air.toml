@@ -1,0 +1,11 @@
+root = "."
+tmp_dir = "tmp"
+
+[build]
+  cmd = "go build -o ./tmp/colimui ."
+  entrypoint = "./tmp/colimui"
+  include_ext = ["go"]
+  exclude_dir = ["tmp", "vendor", ".git"]
+
+[misc]
+  clean_on_exit = true
