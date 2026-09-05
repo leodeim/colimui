@@ -71,7 +71,7 @@ func (m model) renderDashboard() string {
 	if m.focus == 1 {
 		focusName = "logs"
 	}
-	footer := mutedStyle.Render("focus: " + focusName + "  ↑↓/jk move  enter start/stop  ? actions  q quit")
+	footer := mutedStyle.Render("focus: " + focusName + "  ↑↓/jk move  enter start/stop  f follow logs  ? actions  q quit")
 	if m.confirmDelete {
 		footer = statusStyle.Render(sanitizeText(m.status))
 	} else if m.err != nil {

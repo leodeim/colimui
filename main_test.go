@@ -215,7 +215,7 @@ func TestStartKeyWorksWithoutProfileRecord(t *testing.T) {
 func TestActionMenuShowsShortcuts(t *testing.T) {
 	m := model{width: 100, height: 28, status: "ready", actionMenu: true, containers: []container{{Name: "api", State: "running"}}}
 	view := m.View()
-	for _, text := range []string{"colimui", "containers", "actions", "stop api", "keyboard shortcuts", "enter run", "[] profile"} {
+	for _, text := range []string{"colimui", "containers", "actions", "stop api", "restart api", "delete api", "keyboard shortcuts", "enter run", "[] profile"} {
 		if !strings.Contains(view, text) {
 			t.Fatalf("action menu is missing %q: %q", text, view)
 		}

@@ -272,23 +272,31 @@ func (m model) actionMenuItems() []actionMenuItem {
 	}
 
 	container := m.selectedContainer()
+	containerName := "selected container"
+	if container != nil {
+		containerName = container.listName()
+	}
 	containerLabel := "start/stop selected container"
 	if container != nil {
 		if container.State == "running" {
-			containerLabel = "stop " + container.listName()
+			containerLabel = "stop " + containerName
 		} else {
-			containerLabel = "start " + container.listName()
+			containerLabel = "start " + containerName
 		}
+	}
+	followLabel := "follow logs for " + containerName
+	if m.follow {
+		followLabel = "pause logs for " + containerName
 	}
 
 	return []actionMenuItem{
 		{label: profileLabel, shortcut: profileShortcut, enabled: true},
 		{label: containerLabel, shortcut: "enter", enabled: container != nil},
-		{label: "restart selected container", shortcut: "t", enabled: container != nil},
-		{label: "delete selected container", shortcut: "d", enabled: container != nil && container.State != "running"},
-		{label: "reload selected logs", shortcut: "l", enabled: container != nil},
-		{label: "toggle log following", shortcut: "f", enabled: container != nil},
-		{label: "load all selected logs", shortcut: "home", enabled: container != nil},
+		{label: "restart " + containerName, shortcut: "t", enabled: container != nil},
+		{label: "delete " + containerName, shortcut: "d", enabled: container != nil && container.State != "running"},
+		{label: "reload logs for " + containerName, shortcut: "l", enabled: container != nil},
+		{label: followLabel, shortcut: "f", enabled: container != nil},
+		{label: "load all logs for " + containerName, shortcut: "home", enabled: container != nil},
 		{label: "refresh", shortcut: "r", enabled: true},
 	}
 }
