@@ -161,6 +161,9 @@ func (m model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
+	if m.actionMenu {
+		return m.actionMenuKey(msg)
+	}
 	if m.confirmDelete {
 		switch key {
 		case "y", "enter":
@@ -177,6 +180,9 @@ func (m model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	switch key {
+	case "?":
+		m.actionMenu = true
+		m.actionIndex = 0
 	case "q", "ctrl+c":
 		m.stopLogs()
 		return m, tea.Quit
@@ -256,6 +262,76 @@ func (m model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.scrollLogs(key)
 	}
 	return m, nil
+}
+
+func (m model) actionMenuItems() []actionMenuItem {
+	profile := m.currentProfile()
+	profileLabel, profileShortcut := "start colima", "s"
+	if profile != nil && isRunning(profile.Status) {
+		profileLabel, profileShortcut = "stop colima", "x"
+	}
+
+	container := m.selectedContainer()
+	containerLabel := "start/stop selected container"
+	if container != nil {
+		if container.State == "running" {
+			containerLabel = "stop " + container.listName()
+		} else {
+			containerLabel = "start " + container.listName()
+		}
+	}
+
+	return []actionMenuItem{
+		{label: profileLabel, shortcut: profileShortcut, enabled: true},
+		{label: containerLabel, shortcut: "enter", enabled: container != nil},
+		{label: "restart selected container", shortcut: "t", enabled: container != nil},
+		{label: "delete selected container", shortcut: "d", enabled: container != nil && container.State != "running"},
+		{label: "reload selected logs", shortcut: "l", enabled: container != nil},
+		{label: "toggle log following", shortcut: "f", enabled: container != nil},
+		{label: "load all selected logs", shortcut: "home", enabled: container != nil},
+		{label: "refresh", shortcut: "r", enabled: true},
+	}
+}
+
+func (m model) actionMenuKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	key := msg.String()
+	items := m.actionMenuItems()
+	if len(items) == 0 {
+		m.actionMenu = false
+		return m, nil
+	}
+	if m.actionIndex >= len(items) {
+		m.actionIndex = len(items) - 1
+	}
+	switch key {
+	case "esc", "?", "q":
+		m.actionMenu = false
+		return m, nil
+	case "up", "k":
+		m.actionIndex = (m.actionIndex + len(items) - 1) % len(items)
+		return m, nil
+	case "down", "j":
+		m.actionIndex = (m.actionIndex + 1) % len(items)
+		return m, nil
+	case "enter":
+		item := items[m.actionIndex]
+		if !item.enabled {
+			return m, nil
+		}
+		m.actionMenu = false
+		return m.key(shortcutKey(item.shortcut))
+	}
+	return m, nil
+}
+
+func shortcutKey(shortcut string) tea.KeyMsg {
+	switch shortcut {
+	case "enter":
+		return tea.KeyMsg{Type: tea.KeyEnter}
+	case "home":
+		return tea.KeyMsg{Type: tea.KeyHome}
+	}
+	return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(shortcut)}
 }
 
 func (m *model) queueRefresh(profileName string) tea.Cmd {

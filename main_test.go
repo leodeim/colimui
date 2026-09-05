@@ -212,6 +212,28 @@ func TestStartKeyWorksWithoutProfileRecord(t *testing.T) {
 	}
 }
 
+func TestActionMenuShowsShortcuts(t *testing.T) {
+	m := model{width: 100, height: 28, status: "ready", actionMenu: true, containers: []container{{Name: "api", State: "running"}}}
+	view := m.View()
+	for _, text := range []string{"colimui", "containers", "actions", "stop api", "keyboard shortcuts", "enter run", "[] profile"} {
+		if !strings.Contains(view, text) {
+			t.Fatalf("action menu is missing %q: %q", text, view)
+		}
+	}
+}
+
+func TestActionMenuRunsSelectedAction(t *testing.T) {
+	backend := &fakeBackend{}
+	m := newModel(backend, func() tea.Cmd { return nil })
+	m.profiles = []profile{{Name: "default", Status: "Stopped"}}
+	m.actionMenu = true
+	updated, command := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	got := updated.(model)
+	if got.actionMenu || got.status != "starting default" || command == nil {
+		t.Fatalf("menu action = open %t status %q command %t", got.actionMenu, got.status, command != nil)
+	}
+}
+
 func TestDetailsPanePreservesBorder(t *testing.T) {
 	m := model{
 		containers: []container{{ID: "abc", Name: "test", State: "running", Status: "Up", Image: "alpine"}},

@@ -62,6 +62,12 @@ type updateCheckMsg struct {
 	version string
 }
 
+type actionMenuItem struct {
+	label    string
+	shortcut string
+	enabled  bool
+}
+
 type tickFactory func() tea.Cmd
 
 type model struct {
@@ -86,6 +92,8 @@ type model struct {
 	nextActionID   uint64
 	activeActionID uint64
 	updateVersion  string
+	actionMenu     bool
+	actionIndex    int
 	backend        Backend
 	tick           tickFactory
 }

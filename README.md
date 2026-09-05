@@ -55,4 +55,5 @@ References: [Homebrew installation](https://docs.brew.sh/Installation),
 
 ## Keys
 
-`s` start colima · `x` stop colima · `enter` expand groups/start-stop services · `t` restart · `d` delete · `l` reload logs · `f` follow logs · `r` refresh · `q` quit
+Press `?` to open the Actions menu. It lists every action and shortcut, and lets
+you select an action with `↑`/`↓` (or `j`/`k`) and run it with `enter`.

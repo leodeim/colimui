@@ -8,6 +8,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 var (
@@ -32,6 +33,14 @@ func (m model) View() string {
 	if m.width == 0 {
 		return ""
 	}
+	dashboard := m.renderDashboard()
+	if m.actionMenu {
+		return overlay(m.width, m.height, dashboard, m.renderActionMenu())
+	}
+	return dashboard
+}
+
+func (m model) renderDashboard() string {
 	p := m.currentProfile()
 	header := titleStyle.Render("colimui") + "  " + mutedStyle.Render("profile "+sanitizeText(m.currentProfileName()))
 	if p != nil {
@@ -62,7 +71,7 @@ func (m model) View() string {
 	if m.focus == 1 {
 		focusName = "logs"
 	}
-	footer := mutedStyle.Render("focus: " + focusName + "  ↑↓/jk move  [] profile  s start  x stop  tab focus  enter expand/start/stop  t restart  d delete  l logs  f follow  home first  end latest  r refresh  q quit")
+	footer := mutedStyle.Render("focus: " + focusName + "  ↑↓/jk move  enter start/stop  ? actions  q quit")
 	if m.confirmDelete {
 		footer = statusStyle.Render(sanitizeText(m.status))
 	} else if m.err != nil {
@@ -73,6 +82,51 @@ func (m model) View() string {
 		footer = statusStyle.Render("update available: " + sanitizeText(m.updateVersion) + " — run colimui update")
 	}
 	return header + "\n" + panes + "\n" + footer
+}
+
+func (m model) renderActionMenu() string {
+	items := m.actionMenuItems()
+	lines := []string{titleStyle.Render("actions"), mutedStyle.Render("select an action and press enter"), ""}
+	for index, item := range items {
+		label := item.label
+		shortcut := "[" + item.shortcut + "]"
+		if !item.enabled {
+			lines = append(lines, mutedStyle.Render("  "+label+"  "+shortcut))
+			continue
+		}
+		if index == m.actionIndex {
+			lines = append(lines, selectedRowStyle.Render("> "+label+"  "+shortcut))
+		} else {
+			lines = append(lines, "  "+label+"  "+mutedStyle.Render(shortcut))
+		}
+	}
+	lines = append(lines, "", logHeadingStyle.Render("keyboard shortcuts"), mutedStyle.Render("↑↓/j k select  enter run  esc/? close"), mutedStyle.Render("[] profile  tab focus  end latest logs  q quit"))
+	popupWidth := min(64, max(38, m.width-4))
+	return lipgloss.NewStyle().Width(popupWidth).Padding(1, 2).Border(lipgloss.RoundedBorder()).BorderForeground(accent).Background(lipgloss.Color("#1E293B")).Render(strings.Join(lines, "\n"))
+}
+
+func overlay(width, height int, background, foreground string) string {
+	backgroundLines := strings.Split(background, "\n")
+	foregroundLines := strings.Split(foreground, "\n")
+	foregroundWidth := lipgloss.Width(foreground)
+	x := max(0, (width-foregroundWidth)/2)
+	y := max(0, (height-len(foregroundLines))/2)
+	lines := make([]string, height)
+
+	for row := 0; row < height; row++ {
+		line := ""
+		if row < len(backgroundLines) {
+			line = ansi.Truncate(backgroundLines[row], width, "")
+		}
+		line += strings.Repeat(" ", max(0, width-lipgloss.Width(line)))
+		if row >= y && row < y+len(foregroundLines) {
+			popupLine := ansi.Truncate(foregroundLines[row-y], foregroundWidth, "")
+			popupLine += strings.Repeat(" ", max(0, foregroundWidth-lipgloss.Width(popupLine)))
+			line = ansi.Cut(line, 0, x) + popupLine + ansi.Cut(line, x+foregroundWidth, width)
+		}
+		lines[row] = line
+	}
+	return strings.Join(lines, "\n")
 }
 
 func (m model) renderContainers(height, width int) string {
