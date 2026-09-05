@@ -12,11 +12,12 @@ import (
 )
 
 var (
-	accent = lipgloss.Color("#86EFAC")
-	muted  = lipgloss.Color("#94A3B8")
-	red    = lipgloss.Color("#FCA5A5")
-	yellow = lipgloss.Color("#FDE68A")
-	panel  = lipgloss.Color("#334155")
+	accent          = lipgloss.Color("#86EFAC")
+	muted           = lipgloss.Color("#94A3B8")
+	red             = lipgloss.Color("#FCA5A5")
+	yellow          = lipgloss.Color("#FDE68A")
+	panel           = lipgloss.Color("#334155")
+	popupBackground = lipgloss.Color("#27272A")
 
 	titleStyle       = lipgloss.NewStyle().Bold(true).Foreground(accent)
 	mutedStyle       = lipgloss.NewStyle().Foreground(muted)
@@ -39,6 +40,9 @@ func (m model) View() string {
 		return truncate("terminal too small — resize to 60×16", m.width)
 	}
 	dashboard := m.renderDashboard()
+	if m.confirmCleanup {
+		return overlay(m.width, m.height, dashboard, m.renderCleanupConfirmation())
+	}
 	if m.usageOverview {
 		return overlay(m.width, m.height, dashboard, m.renderUsageOverview())
 	}
@@ -49,6 +53,29 @@ func (m model) View() string {
 		return overlay(m.width, m.height, dashboard, m.renderActionMenu())
 	}
 	return dashboard
+}
+
+func (m model) renderCleanupConfirmation() string {
+	lines := []string{
+		titleStyle.Render("clean up Docker storage?"),
+		"",
+		"This removes unused images, stopped containers, unused networks,",
+		"build cache, and unused named or anonymous volumes.",
+		mutedStyle.Render("Volumes removed here cannot be recovered."),
+		"",
+	}
+	lines = append(lines, m.cleanupSummary()...)
+	lines = append(lines, "")
+	for index, option := range []string{"cancel", "clean up"} {
+		line := "  " + option
+		if index == m.cleanupChoice {
+			line = selectedRowStyle.Render("> " + option)
+		}
+		lines = append(lines, line)
+	}
+	lines = append(lines, "", mutedStyle.Render("↑↓/j k select  enter confirm  y/n quick choice  esc cancel"))
+	width := min(72, max(42, m.width-4))
+	return lipgloss.NewStyle().Width(width).Padding(1, 2).Border(lipgloss.RoundedBorder()).BorderForeground(red).Background(popupBackground).Render(strings.Join(lines, "\n"))
 }
 
 func (m model) renderDeleteConfirmation() string {
@@ -66,7 +93,7 @@ func (m model) renderDeleteConfirmation() string {
 	}
 	lines = append(lines, "", mutedStyle.Render("↑↓/j k select  enter confirm  y/n quick choice  esc cancel"))
 	width := min(52, max(34, m.width-4))
-	return lipgloss.NewStyle().Width(width).Padding(1, 2).Border(lipgloss.RoundedBorder()).BorderForeground(red).Background(lipgloss.Color("#1E293B")).Render(strings.Join(lines, "\n"))
+	return lipgloss.NewStyle().Width(width).Padding(1, 2).Border(lipgloss.RoundedBorder()).BorderForeground(red).Background(popupBackground).Render(strings.Join(lines, "\n"))
 }
 
 func (m model) renderDashboard() string {
@@ -136,8 +163,8 @@ func (m model) renderActionMenu() string {
 		}
 	}
 	lines = append(lines, "", logHeadingStyle.Render("keyboard shortcuts"), mutedStyle.Render("↑↓/j k select  enter run  esc/? close"), mutedStyle.Render("[] profile  tab focus  end latest logs  q quit"))
-	popupWidth := min(64, max(38, m.width-4))
-	return lipgloss.NewStyle().Width(popupWidth).Padding(1, 2).Border(lipgloss.RoundedBorder()).BorderForeground(accent).Background(lipgloss.Color("#1E293B")).Render(strings.Join(lines, "\n"))
+	popupWidth := min(78, max(38, m.width-4))
+	return lipgloss.NewStyle().Width(popupWidth).Padding(1, 2).Border(lipgloss.RoundedBorder()).BorderForeground(accent).Background(popupBackground).Render(strings.Join(lines, "\n"))
 }
 
 func overlay(width, height int, background, foreground string) string {

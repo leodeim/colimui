@@ -79,6 +79,9 @@ type tickFactory func() tea.Cmd
 
 type model struct {
 	usageOverview    bool
+	confirmCleanup   bool
+	cleanupChoice    int
+	cleanupRunning   bool
 	overall          statsMsg
 	storage          storageMsg
 	storageBusy      bool

@@ -45,6 +45,7 @@ go install github.com/leodeim/colimui@latest
 | --- | --- |
 | `?` | Open or close the Actions menu |
 | `u` | Open/close Docker usage overview: total CPU, RAM, and storage |
+| `c` | Open cleanup confirmation for reclaimable Docker storage |
 | `↑` / `↓` or `k` / `j` | Select a container or menu item |
 | `Tab`, `←`, `→` | Switch focus between containers and logs |
 | `Enter` | Start/stop the selected container, expand/collapse a Compose group, or run the selected menu action |

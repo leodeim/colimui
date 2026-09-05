@@ -14,11 +14,15 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 type overviewBackend interface {
 	AllStats(string) ([]containerStats, error)
 	Storage(string) ([]storageRow, error)
+}
+type cleanupBackend interface {
+	Cleanup(string) error
 }
 type storageRow struct{ Type, Size, Reclaimable string }
 type storageMsg struct {
@@ -70,6 +74,56 @@ func (execBackend) Storage(profile string) ([]storageRow, error) {
 		return nil, err
 	}
 	return parseStorage(out)
+}
+
+// Cleanup removes only Docker resources which are unused. It never removes a
+// running container or data from a volume still attached to a container.
+func (execBackend) Cleanup(profile string) error {
+	for _, args := range [][]string{
+		{"system", "prune", "--all", "--force"},
+		{"volume", "prune", "--all", "--force"},
+	} {
+		if _, err := dockerUsageOutput(profile, 30*time.Second, args...); err != nil {
+			return fmt.Errorf("docker %s: %w", strings.Join(args, " "), err)
+		}
+	}
+	return nil
+}
+
+type cleanupMsg struct {
+	profile string
+	err     error
+}
+
+func (m *model) cleanupCmd() tea.Cmd {
+	if m.cleanupRunning {
+		return nil
+	}
+	backend, ok := m.currentBackend().(cleanupBackend)
+	if !ok {
+		return nil
+	}
+	profile := m.currentProfileName()
+	m.cleanupRunning = true
+	return func() tea.Msg {
+		return cleanupMsg{profile: profile, err: backend.Cleanup(profile)}
+	}
+}
+
+func (m model) cleanupSummary() []string {
+	if m.storage.profile != m.currentProfileName() || m.storage.err != nil {
+		return []string{"Docker will identify reclaimable resources when cleanup runs."}
+	}
+	var lines []string
+	for _, row := range m.storage.rows {
+		if row.Reclaimable != "" && !strings.HasPrefix(row.Reclaimable, "0B") {
+			lines = append(lines, fmt.Sprintf("%s: %s reclaimable", sanitizeText(row.Type), sanitizeText(row.Reclaimable)))
+		}
+	}
+	if len(lines) == 0 {
+		return []string{"Docker reports no reclaimable storage."}
+	}
+	return lines
 }
 func parseStorage(out []byte) ([]storageRow, error) {
 	var rows []storageRow
@@ -155,47 +209,68 @@ func statsTotals(values []containerStats) (float64, float64, error) {
 }
 
 func (m model) renderUsageOverview() string {
-	lines := []string{titleStyle.Render("Docker usage overview"), "profile: " + m.currentProfileName()}
+	width := min(78, m.width-4)
+	contentWidth := max(1, width-4)
+	lines := []string{
+		titleStyle.Render("docker usage overview"),
+		mutedStyle.Render("profile: " + sanitizeText(m.currentProfileName())),
+		"",
+	}
 	p := m.currentProfile()
 	if p == nil || !isRunning(p.Status) {
-		lines = append(lines, "Colima is stopped or unavailable.")
+		lines = append(lines, statusStyle.Render("colima is stopped or unavailable."))
 	} else {
-		lines = append(lines, fmt.Sprintf("VM allocated: %d CPU · %s RAM · %s disk", p.CPUs, humanBytes(p.Memory), humanBytes(p.Disk)))
+		lines = append(lines, fmt.Sprintf("vm allocated: %d cpu · %s ram · %s disk", p.CPUs, humanBytes(p.Memory), humanBytes(p.Disk)))
 		if m.overall.profile != p.Name {
-			lines = append(lines, "Containers: loading…")
+			lines = append(lines, mutedStyle.Render("containers: loading…"))
 		} else if m.overall.err != nil {
-			lines = append(lines, "Containers unavailable: "+m.overall.err.Error())
+			lines = append(lines, errorStyle.Render("containers unavailable: "+sanitizeText(m.overall.err.Error())))
 		} else if time.Since(m.overall.at) > 3*statsInterval {
-			lines = append(lines, "Containers: stale; waiting for update")
+			lines = append(lines, statusStyle.Render("containers: stale; waiting for update"))
 		} else {
 			cpu, mem, err := statsTotals(m.overall.all)
 			if err != nil {
-				lines = append(lines, "Container totals unavailable: "+err.Error())
+				lines = append(lines, errorStyle.Render("container totals unavailable: "+sanitizeText(err.Error())))
 			} else {
-				lines = append(lines, fmt.Sprintf("%d running · CPU %.2f%% · RAM %s", len(m.overall.all), cpu, humanBytes(int64(mem))))
+				lines = append(lines, fmt.Sprintf("%d running · cpu %.2f%% · ram %s", len(m.overall.all), cpu, humanBytes(int64(mem))))
 			}
 		}
-		lines = append(lines, "CPU: 100% = one core; excludes VM/daemon overhead.", "Docker storage          Used       Reclaimable")
+		lines = append(lines, mutedStyle.Render("cpu: 100% = one core; excludes vm/docker overhead."), "", overviewStorageHeader())
 		if m.storage.profile != p.Name {
-			lines = append(lines, "Loading storage…")
+			lines = append(lines, mutedStyle.Render("loading storage…"))
 		} else if m.storage.err != nil {
-			lines = append(lines, "Storage unavailable: "+m.storage.err.Error())
+			lines = append(lines, errorStyle.Render("storage unavailable: "+sanitizeText(m.storage.err.Error())))
 		} else {
 			for _, row := range m.storage.rows {
-				lines = append(lines, fmt.Sprintf("%-22s %-10s %s", sanitizeText(row.Type), sanitizeText(row.Size), sanitizeText(row.Reclaimable)))
+				lines = append(lines, fmt.Sprintf("%-22s %-10s %s", overviewText(row.Type), overviewText(row.Size), overviewText(row.Reclaimable)))
 			}
-			lines = append(lines, fmt.Sprintf("Storage sampled %ds ago (refreshes every 30s).", int(time.Since(m.storage.at).Seconds())))
+			lines = append(lines, mutedStyle.Render(fmt.Sprintf("storage sampled %ds ago (refreshes every 30s).", int(time.Since(m.storage.at).Seconds()))))
 		}
-		lines = append(lines, "Storage categories may share data; not host disk use.")
+		lines = append(lines, mutedStyle.Render("storage categories may share data; not host disk use."))
 	}
-	lines = append(lines, "esc / q / u close")
-	width := min(78, m.width-4)
+	if m.cleanupRunning {
+		lines = append(lines, "", logHeadingStyle.Render("cleanup"), statusStyle.Render("cleaning up reclaimable storage…"))
+	} else {
+		lines = append(lines, "", logHeadingStyle.Render("keyboard shortcuts"), overviewFooter())
+	}
 	for i := range lines {
-		lines[i] = truncate(lines[i], width-4)
+		lines[i] = ansi.Truncate(lines[i], contentWidth, "")
 	}
 	// Keep the close hint visible even in a short terminal.
-	if len(lines) > m.height-4 {
-		lines = append(lines[:m.height-5], lines[len(lines)-1])
+	if len(lines) > m.height-6 {
+		lines = append(lines[:m.height-7], lines[len(lines)-1])
 	}
-	return lipgloss.NewStyle().Width(width).Padding(0, 1).Border(lipgloss.RoundedBorder()).BorderForeground(accent).Render(strings.Join(lines, "\n"))
+	return lipgloss.NewStyle().Width(width).Padding(1, 2).Border(lipgloss.RoundedBorder()).BorderForeground(accent).Background(popupBackground).Render(strings.Join(lines, "\n"))
+}
+
+func overviewStorageHeader() string {
+	return logHeadingStyle.Render("docker storage") + strings.Repeat(" ", 9) + mutedStyle.Render("used") + strings.Repeat(" ", 8) + mutedStyle.Render("reclaimable")
+}
+
+func overviewText(value string) string {
+	return strings.ToLower(sanitizeText(value))
+}
+
+func overviewFooter() string {
+	return selectedStyle.Render("c") + mutedStyle.Render(" clean up reclaimable storage") + mutedStyle.Render("  ·  ") + selectedStyle.Render("esc / q / u") + mutedStyle.Render(" close")
 }

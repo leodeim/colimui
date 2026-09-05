@@ -1,17 +1,21 @@
 package main
 
 import (
+	"errors"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 type fakeOverviewBackend struct {
 	fakeBackend
-	samples int
-	disks   int
+	samples  int
+	disks    int
+	cleanups int
+	cleanup  error
 }
 
 func (b *fakeOverviewBackend) AllStats(string) ([]containerStats, error) {
@@ -21,6 +25,10 @@ func (b *fakeOverviewBackend) AllStats(string) ([]containerStats, error) {
 func (b *fakeOverviewBackend) Storage(string) ([]storageRow, error) {
 	b.disks++
 	return []storageRow{{Type: "Images", Size: "1GB", Reclaimable: "0B"}}, nil
+}
+func (b *fakeOverviewBackend) Cleanup(string) error {
+	b.cleanups++
+	return b.cleanup
 }
 
 func TestOverviewTotals(t *testing.T) {
@@ -127,5 +135,120 @@ func TestOverviewMenuEntry(t *testing.T) {
 	u, _ = m.key(shortcutKey("q"))
 	if u.(model).usageOverview {
 		t.Fatal("q did not close")
+	}
+}
+
+func TestOverviewUsesActionsMenuHeaderAndFooterStyle(t *testing.T) {
+	m := model{
+		width:    100,
+		height:   30,
+		profiles: []profile{{Name: "default", Status: "Running", CPUs: 2, Memory: 2 << 30, Disk: 100 << 30}},
+		storage: storageMsg{profile: "default", at: time.Now(), rows: []storageRow{
+			{Type: "Images", Size: "1GB", Reclaimable: "1GB (100%)"},
+		}},
+		overall: statsMsg{profile: "default", at: time.Now()},
+	}
+	view := ansi.Strip(m.renderUsageOverview())
+	lines := strings.Split(view, "\n")
+	var titleLine, footerLine string
+	footerIndex := -1
+	for index, line := range lines {
+		if strings.Contains(line, "docker usage overview") {
+			titleLine = line
+		}
+		if strings.Contains(line, "clean up reclaimable storage") {
+			footerLine, footerIndex = line, index
+		}
+	}
+	if strings.Index(titleLine, "docker usage overview") > 6 {
+		t.Fatalf("title is not aligned with the Actions menu: %q", titleLine)
+	}
+	if footerIndex < 1 || !strings.Contains(lines[footerIndex-1], "keyboard shortcuts") || !strings.Contains(footerLine, "esc / q / u") {
+		t.Fatalf("footer has no shortcut section: %q", footerLine)
+	}
+}
+
+func TestOverviewAndActionsMenuUseTheSamePopupWidth(t *testing.T) {
+	m := model{width: 100, height: 30}
+	if got, want := lipgloss.Width(m.renderActionMenu()), lipgloss.Width(m.renderUsageOverview()); got != want {
+		t.Fatalf("actions width = %d, usage width = %d", got, want)
+	}
+}
+
+func TestOverviewLowercasesDockerDisplayText(t *testing.T) {
+	m := model{
+		width:    100,
+		height:   30,
+		profiles: []profile{{Name: "default", Status: "Running"}},
+		storage: storageMsg{profile: "default", at: time.Now(), rows: []storageRow{
+			{Type: "Local Volumes", Size: "48.65MB", Reclaimable: "48.65MB (100%)"},
+		}},
+		overall: statsMsg{profile: "default", at: time.Now()},
+	}
+	view := ansi.Strip(m.renderUsageOverview())
+	for _, unexpected := range []string{"Docker usage", "VM allocated", "CPU", "RAM", "Local Volumes", "48.65MB"} {
+		if strings.Contains(view, unexpected) {
+			t.Fatalf("overview contains title-case display text %q: %q", unexpected, view)
+		}
+	}
+	for _, expected := range []string{"docker usage overview", "vm allocated", "cpu", "ram", "local volumes", "48.65mb"} {
+		if !strings.Contains(view, expected) {
+			t.Fatalf("overview is missing lowercase display text %q: %q", expected, view)
+		}
+	}
+}
+
+func TestCleanupRequiresConfirmationAndRefreshesStorage(t *testing.T) {
+	backend := &fakeOverviewBackend{}
+	m := newModel(backend, nil)
+	m.width, m.height = 100, 30
+	m.profiles = []profile{{Name: "default", Status: "Running"}}
+	m.storage = storageMsg{profile: "default", rows: []storageRow{
+		{Type: "Images", Reclaimable: "429.1MB (99%)"},
+		{Type: "Local Volumes", Reclaimable: "48.65MB (100%)"},
+	}}
+
+	updated, command := m.key(shortcutKey("c"))
+	m = updated.(model)
+	if command == nil || !m.usageOverview || !m.confirmCleanup || backend.cleanups != 0 {
+		t.Fatal("cleanup should open a confirmation before running")
+	}
+	if view := m.renderCleanupConfirmation(); !strings.Contains(view, "Images: 429.1MB") || !strings.Contains(view, "Local Volumes: 48.65MB") || !strings.Contains(view, "cannot be recovered") {
+		t.Fatalf("confirmation lacks cleanup scope: %q", view)
+	}
+
+	updated, command = m.key(shortcutKey("y"))
+	m = updated.(model)
+	if command == nil || m.confirmCleanup || !m.cleanupRunning || backend.cleanups != 0 {
+		t.Fatal("confirmation did not start cleanup")
+	}
+	message := command().(cleanupMsg)
+	if backend.cleanups != 1 || message.err != nil {
+		t.Fatalf("cleanup call = %d, error = %v", backend.cleanups, message.err)
+	}
+	updated, command = m.Update(message)
+	m = updated.(model)
+	if command == nil || m.cleanupRunning || m.status != "cleanup complete" || m.storage.profile != "" {
+		t.Fatalf("completion state = %#v", m)
+	}
+}
+
+func TestCleanupCancellationAndFailure(t *testing.T) {
+	backend := &fakeOverviewBackend{cleanup: errors.New("daemon failed")}
+	m := newModel(backend, nil)
+	m.profiles = []profile{{Name: "default", Status: "Running"}}
+	m.usageOverview, m.confirmCleanup = true, true
+	updated, command := m.key(shortcutKey("n"))
+	m = updated.(model)
+	if command != nil || m.confirmCleanup || backend.cleanups != 0 {
+		t.Fatal("cancel ran cleanup")
+	}
+	m.confirmCleanup = true
+	updated, command = m.key(shortcutKey("y"))
+	m = updated.(model)
+	updated, _ = m.Update(command())
+	m = updated.(model)
+	if m.status != "cleanup failed" || m.err == nil || m.cleanupRunning {
+		t.Fatalf("cleanup failure = %#v", m)
 	}
 }

@@ -21,6 +21,20 @@ func (m model) Init() tea.Cmd {
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case cleanupMsg:
+		m.cleanupRunning = false
+		if msg.profile != m.currentProfileName() {
+			return m, nil
+		}
+		m.confirmCleanup = false
+		if msg.err != nil {
+			m.err, m.status = msg.err, "cleanup failed"
+			return m, nil
+		}
+		m.storage = storageMsg{}
+		m.storageRequested = time.Time{}
+		m.status = "cleanup complete"
+		return m, tea.Batch(m.queueRefresh(m.currentProfileName()), m.pollStorage())
 	case statsTickMsg:
 		return m, tea.Batch(m.pollStats(), m.pollStorage(), statsTick())
 	case storageMsg:
@@ -201,7 +215,31 @@ func (m model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.stopLogs()
 		return m, tea.Quit
 	}
+	if m.confirmCleanup {
+		switch key {
+		case "y":
+			m.confirmCleanup = false
+			return m, m.cleanupCmd()
+		case "enter":
+			if m.cleanupChoice == 1 {
+				m.confirmCleanup = false
+				return m, m.cleanupCmd()
+			}
+			m.confirmCleanup = false
+		case "up", "k":
+			m.cleanupChoice = 0
+		case "down", "j":
+			m.cleanupChoice = 1
+		case "n", "esc", "q", "c":
+			m.confirmCleanup = false
+		}
+		return m, nil
+	}
 	if m.usageOverview {
+		if key == "c" && !m.cleanupRunning {
+			m.confirmCleanup, m.cleanupChoice = true, 0
+			return m, nil
+		}
 		if key == "esc" || key == "q" || key == "u" || key == "?" {
 			m.usageOverview = false
 		}
@@ -236,6 +274,9 @@ func (m model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	switch key {
+	case "c":
+		m.usageOverview, m.confirmCleanup, m.cleanupChoice = true, true, 0
+		return m, tea.Batch(m.pollStats(), m.pollStorage())
 	case "u":
 		m.usageOverview = true
 		return m, tea.Batch(m.pollStats(), m.pollStorage())
@@ -413,7 +454,8 @@ func (m model) actionMenuItems() []actionMenuItem {
 		{label: "load all logs for " + containerName, shortcut: "home", enabled: container != nil},
 		{label: "search log text", shortcut: "L", enabled: container != nil},
 		{label: "toggle log timestamps", shortcut: "T", enabled: true},
-		{label: "Docker usage overview", shortcut: "u", enabled: true},
+		{label: "clean up reclaimable docker storage", shortcut: "c", enabled: !m.cleanupRunning},
+		{label: "docker usage overview", shortcut: "u", enabled: true},
 		{label: "refresh", shortcut: "r", enabled: true},
 		{label: "search containers", shortcut: "/", enabled: true},
 		{label: map[bool]string{false: "show running only", true: "show all states"}[m.runningOnly], shortcut: "R", enabled: true},
