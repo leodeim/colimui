@@ -58,6 +58,10 @@ type logsMsg struct {
 	err    error
 }
 
+type updateCheckMsg struct {
+	version string
+}
+
 type tickFactory func() tea.Cmd
 
 type model struct {
@@ -81,6 +85,7 @@ type model struct {
 	refreshID      uint64
 	nextActionID   uint64
 	activeActionID uint64
+	updateVersion  string
 	backend        Backend
 	tick           tickFactory
 }

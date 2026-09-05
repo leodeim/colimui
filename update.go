@@ -13,7 +13,7 @@ import (
 const refreshInterval = 3 * time.Second
 
 func (m model) Init() tea.Cmd {
-	return tea.Batch(m.refreshCmd(m.refreshID, ""), m.nextTick())
+	return tea.Batch(m.refreshCmd(m.refreshID, ""), m.nextTick(), checkForUpdateCmd())
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -89,6 +89,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.queueRefresh(m.currentProfileName())
 	case tickMsg:
 		return m, tea.Batch(m.queueRefresh(m.currentProfileName()), m.nextTick())
+	case updateCheckMsg:
+		m.updateVersion = msg.version
 	case logsMsg:
 		if msg.reader != m.reader {
 			return m, nil

@@ -17,6 +17,13 @@ func main() {
 		fmt.Printf("colimui %s\n", version)
 		return
 	}
+	if len(os.Args) == 2 && os.Args[1] == "update" {
+		if err := update(); err != nil {
+			fmt.Fprintln(os.Stderr, "update failed:", err)
+			os.Exit(1)
+		}
+		return
+	}
 	if os.Getenv("COLIMUI_NO_COLOR") != "1" {
 		lipgloss.SetColorProfile(termenv.TrueColor)
 	}

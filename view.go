@@ -69,6 +69,8 @@ func (m model) View() string {
 		footer = errorStyle.Render(sanitizeText(m.status) + ": " + sanitizeText(m.err.Error()))
 	} else if m.status != "ready" {
 		footer = statusStyle.Render(sanitizeText(m.status))
+	} else if m.updateVersion != "" {
+		footer = statusStyle.Render("update available: " + sanitizeText(m.updateVersion) + " — run colimui update")
 	}
 	return header + "\n" + panes + "\n" + footer
 }

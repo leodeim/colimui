@@ -14,23 +14,28 @@ A small terminal UI app for `colima` and `docker`.
 
 ## Install
 
-Install the latest release—no Go installation required:
+The installer supports macOS and Linux on Intel/AMD and ARM CPUs. It downloads binary, verifies its checksum, and installs to `/usr/local/bin`.
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/leodeim/colimui/main/scripts/install.sh | sh
 ```
 
-The installer supports macOS and Linux on Intel/AMD and ARM CPUs. It downloads binary, verifies itschecksum, and installs to `/usr/local/bin`.
-Set `INSTALL_DIR` to install elsewhere:
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/leodeim/colimui/main/scripts/install.sh | INSTALL_DIR="$HOME/.local/bin" sh
-```
-
-Install using Go:
+Using Go:
 
 ```sh
 go install github.com/leodeim/colimui@latest
+```
+
+### Run
+
+```sh
+colimui
+```
+
+### Update
+
+```sh
+colimui update
 ```
 
 ## New Mac setup
@@ -47,12 +52,6 @@ be rerun. Existing Compose plugins are backed up before replacement.
 References: [Homebrew installation](https://docs.brew.sh/Installation),
 [Colima installation](https://colima.run/docs/installation/),
 [Compose Homebrew package](https://formulae.brew.sh/formula/docker-compose).
-
-## Run
-
-```sh
-colimui
-```
 
 ## Keys
 
