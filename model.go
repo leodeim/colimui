@@ -78,6 +78,10 @@ type actionMenuItem struct {
 type tickFactory func() tea.Cmd
 
 type model struct {
+	searchQuery      string
+	searchEditing    bool
+	searchBefore     string
+	runningOnly      bool
 	profiles         []profile
 	profileIndex     int
 	containers       []container

@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"sort"
+	"strings"
 )
 
 type containerGroup struct {
@@ -43,6 +44,9 @@ func (m model) selectedGroupName() string {
 func (m model) containerGroups() []containerGroup {
 	byName := make(map[string][]int)
 	for i, c := range m.containers {
+		if !m.matchesFilter(c) {
+			continue
+		}
 		name := c.ComposeProject
 		if name == "" {
 			name = "standalone"
@@ -90,6 +94,9 @@ func (m model) listItems() []listItem {
 }
 
 func (m model) isExpanded(name string) bool {
+	if strings.TrimSpace(m.searchQuery) != "" {
+		return true
+	}
 	if m.expanded == nil {
 		return true
 	}
@@ -200,4 +207,31 @@ func (m model) currentProfileName() string {
 		return p.Name
 	}
 	return "default"
+}
+
+// A query is a case-insensitive substring of any searchable field.
+func (m model) matchesFilter(c container) bool {
+	if m.runningOnly && !strings.EqualFold(c.State, "running") {
+		return false
+	}
+	query := strings.ToLower(strings.TrimSpace(m.searchQuery))
+	if query == "" {
+		return true
+	}
+	for _, value := range []string{c.Name, c.Image, c.ComposeProject, c.ComposeService, c.State} {
+		if strings.Contains(strings.ToLower(value), query) {
+			return true
+		}
+	}
+	return false
+}
+
+func (m model) matchingCount() int {
+	count := 0
+	for _, c := range m.containers {
+		if m.matchesFilter(c) {
+			count++
+		}
+	}
+	return count
 }

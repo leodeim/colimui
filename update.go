@@ -174,6 +174,9 @@ func (m model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.stopLogs()
 		return m, tea.Quit
 	}
+	if m.searchEditing {
+		return m.searchKey(msg)
+	}
 	if m.actionMenu {
 		return m.actionMenuKey(msg)
 	}
@@ -197,6 +200,17 @@ func (m model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	switch key {
+	case "/":
+		m.searchEditing, m.searchBefore = true, m.searchQuery
+		m.focus = 0
+	case "R":
+		oldID := m.selectedID()
+		m.runningOnly = !m.runningOnly
+		return m, m.filterSelection(oldID)
+	case "esc":
+		oldID := m.selectedID()
+		m.searchQuery, m.runningOnly = "", false
+		return m, m.filterSelection(oldID)
 	case "?":
 		m.actionMenu = true
 		m.actionIndex = 0
@@ -349,6 +363,8 @@ func (m model) actionMenuItems() []actionMenuItem {
 		{label: followLabel, shortcut: "f", enabled: container != nil},
 		{label: "load all logs for " + containerName, shortcut: "home", enabled: container != nil},
 		{label: "refresh", shortcut: "r", enabled: true},
+		{label: "search containers", shortcut: "/", enabled: true},
+		{label: map[bool]string{false: "show running only", true: "show all states"}[m.runningOnly], shortcut: "R", enabled: true},
 	}
 }
 
@@ -506,4 +522,41 @@ func (m *model) actionCmd(profileName, label, command string, args ...string) te
 	return func() tea.Msg {
 		return actionMsg{requestID: requestID, label: label, err: backend.Action(profileName, command, args...)}
 	}
+}
+
+// Preserve the selected identity when possible; never reuse a filtered row index.
+func (m *model) filterSelection(oldID string) tea.Cmd {
+	if index := m.findContainerItem(oldID); index >= 0 {
+		m.containerIndex = index
+	} else {
+		m.containerIndex = m.firstContainerItem()
+	}
+	if oldID != m.selectedID() {
+		return m.reloadSelectedLogs()
+	}
+	return nil
+}
+
+func (m model) searchKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	oldID := m.selectedID()
+	switch msg.Type {
+	case tea.KeyEnter:
+		m.searchEditing = false
+	case tea.KeyEsc:
+		m.searchQuery, m.searchEditing = m.searchBefore, false
+	case tea.KeyBackspace, tea.KeyDelete:
+		runes := []rune(m.searchQuery)
+		if len(runes) > 0 {
+			m.searchQuery = string(runes[:len(runes)-1])
+		}
+	case tea.KeyCtrlU:
+		m.searchQuery = ""
+	case tea.KeySpace:
+		m.searchQuery += " "
+	case tea.KeyRunes:
+		if len([]rune(m.searchQuery))+len(msg.Runes) <= 256 {
+			m.searchQuery += string(msg.Runes)
+		}
+	}
+	return m, m.filterSelection(oldID)
 }

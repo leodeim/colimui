@@ -97,7 +97,7 @@ func (m model) renderDashboard() string {
 	if m.focus == 1 {
 		focusName = "logs"
 	}
-	footer := mutedStyle.Render("focus: " + focusName + "  ↑↓/jk move  enter start/stop  f follow logs  ? actions  q quit")
+	footer := mutedStyle.Render("focus: " + focusName + "  / search  R running  ? actions  q quit")
 	if m.confirmDelete {
 		footer = statusStyle.Render(sanitizeText(m.status))
 	} else if m.err != nil {
@@ -106,6 +106,9 @@ func (m model) renderDashboard() string {
 		footer = statusStyle.Render(sanitizeText(m.status))
 	} else if m.updateVersion != "" {
 		footer = statusStyle.Render("update available: " + sanitizeText(m.updateVersion) + " — run colimui update")
+	}
+	if m.searchEditing {
+		footer = statusStyle.Render("search: " + sanitizeText(m.searchQuery) + "▏  enter apply · esc cancel · ctrl+u clear")
 	}
 	return ansi.Truncate(header, m.width, "") + "\n" + panes + "\n" + ansi.Truncate(footer, m.width, "")
 }
@@ -161,16 +164,26 @@ func (m model) renderContainers(height, width int) string {
 		heading = selectedStyle.Render("▸ " + heading)
 	}
 	lines := []string{heading + "  " + mutedStyle.Render(strconv.Itoa(len(m.containers)))}
+	if m.searchQuery != "" || m.runningOnly || m.searchEditing {
+		filter := "all states"
+		if m.runningOnly {
+			filter = "running only"
+		}
+		lines[0] = heading + "  " + mutedStyle.Render(fmt.Sprintf("%d/%d", m.matchingCount(), len(m.containers)))
+		lines = append(lines, mutedStyle.Render(truncate(filter+" /"+m.searchQuery, width-4)))
+	}
 	items := m.listItems()
 	if len(items) == 0 {
 		lines = append(lines, "")
-		if p := m.currentProfile(); p != nil && !isRunning(p.Status) {
+		if len(m.containers) > 0 && (m.searchQuery != "" || m.runningOnly) {
+			lines = append(lines, mutedStyle.Render("no matches"), mutedStyle.Render("esc clears filters"))
+		} else if p := m.currentProfile(); p != nil && !isRunning(p.Status) {
 			lines = append(lines, mutedStyle.Render("colima is stopped"), statusStyle.Render("press s to start"))
 		} else {
 			lines = append(lines, mutedStyle.Render("no containers"))
 		}
 	} else {
-		rowCount := max(1, height-1)
+		rowCount := max(1, height-len(lines))
 		start := max(0, m.containerIndex-rowCount+1)
 		start = min(start, max(0, len(items)-rowCount))
 		end := min(len(items), start+rowCount)
