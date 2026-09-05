@@ -13,6 +13,10 @@
 
 A lightweight terminal UI for Colima and Docker.
 
+<p align="center">
+  <img src="assets/screenshot.png" alt="colimui logo" width="650">
+</p>
+
 ## Install
 
 The installer supports macOS and Linux on Intel/AMD and ARM CPUs. It downloads binary, verifies its checksum, and installs to `/usr/local/bin`; set `INSTALL_DIR` to override it. 
