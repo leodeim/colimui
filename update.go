@@ -10,7 +10,10 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-const refreshInterval = 3 * time.Second
+const (
+	refreshInterval = 3 * time.Second
+	spinnerInterval = 120 * time.Millisecond
+)
 
 func (m model) Init() tea.Cmd {
 	return tea.Batch(m.refreshCmd(m.refreshID, ""), m.nextTick(), checkForUpdateCmd())
@@ -83,6 +86,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.activeActionID = 0
+		m.activeActionContainerID, m.activeActionLabel = "", ""
 		if msg.err != nil {
 			m.err, m.status = msg.err, msg.label+" failed"
 		} else {
@@ -91,6 +95,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.queueRefresh(m.currentProfileName())
 	case tickMsg:
 		return m, tea.Batch(m.queueRefresh(m.currentProfileName()), m.nextTick())
+	case spinnerTickMsg:
+		if m.activeActionID == 0 {
+			return m, nil
+		}
+		m.spinnerFrame = (m.spinnerFrame + 1) % len(spinnerFrames)
+		return m, spinnerTick()
 	case updateCheckMsg:
 		m.updateVersion = msg.version
 	case logsMsg:
@@ -222,17 +232,20 @@ func (m model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if p := m.currentProfile(); p == nil || !isRunning(p.Status) {
 			name := m.currentProfileName()
 			m.status = "starting " + name
-			return m, m.actionCmd(name, "start", "colima", "start", "--profile", name)
+			command := m.actionCmd(name, "start", "colima", "start", "--profile", name)
+			return m, tea.Batch(command, spinnerTick())
 		}
 	case "x":
 		if p := m.currentProfile(); p != nil && isRunning(p.Status) {
 			m.status = "stopping " + p.Name
-			return m, m.actionCmd(p.Name, "stop", "colima", "stop", "--profile", p.Name)
+			command := m.actionCmd(p.Name, "stop", "colima", "stop", "--profile", p.Name)
+			return m, tea.Batch(command, spinnerTick())
 		}
 	case "t":
 		if c := m.selectedContainer(); c != nil {
 			m.status = "restarting " + c.Name
-			return m, m.actionCmd(m.currentProfileName(), "restart", "docker", "restart", c.ID)
+			command := m.actionCmd(m.currentProfileName(), "restart", "docker", "restart", c.ID)
+			return m, tea.Batch(command, spinnerTick())
 		}
 	case "enter":
 		if item := m.selectedItem(); item != nil && item.groupHeader {
@@ -243,7 +256,8 @@ func (m model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				verb = "start"
 			}
 			m.status = map[string]string{"start": "starting ", "stop": "stopping "}[verb] + c.Name
-			return m, m.actionCmd(m.currentProfileName(), verb, "docker", verb, c.ID)
+			command := m.actionCmd(m.currentProfileName(), verb, "docker", verb, c.ID)
+			return m, tea.Batch(command, spinnerTick())
 		}
 	case "d":
 		if c := m.selectedContainer(); c != nil {
@@ -411,9 +425,17 @@ func defaultTick() tea.Cmd {
 	return tea.Tick(refreshInterval, func(t time.Time) tea.Msg { return tickMsg(t) })
 }
 
+func spinnerTick() tea.Cmd {
+	return tea.Tick(spinnerInterval, func(t time.Time) tea.Msg { return spinnerTickMsg(t) })
+}
+
 func (m *model) actionCmd(profileName, label, command string, args ...string) tea.Cmd {
 	m.nextActionID++
 	m.activeActionID = m.nextActionID
+	m.activeActionContainerID, m.activeActionLabel = "", label
+	if command == "docker" && len(args) > 1 {
+		m.activeActionContainerID = args[len(args)-1]
+	}
 	requestID := m.activeActionID
 	backend := m.currentBackend()
 	return func() tea.Msg {

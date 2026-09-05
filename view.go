@@ -29,6 +29,8 @@ var (
 	errorStyle       = lipgloss.NewStyle().Foreground(red)
 )
 
+var spinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+
 func (m model) View() string {
 	if m.width == 0 {
 		return ""
@@ -181,6 +183,11 @@ func (m model) renderContainers(height, width int) string {
 				marker = "●"
 			}
 			containerStatus := statusLabel(c.Status, statusWidth)
+			isActing := m.activeActionContainerID == c.ID
+			if isActing {
+				marker = spinnerFrames[m.spinnerFrame]
+				containerStatus = actionProgressLabel(m.activeActionLabel)
+			}
 			name := middleTruncate(c.listName(), nameWidth)
 			plain := fmt.Sprintf("%s%s %-*s %s", indent, marker, nameWidth, name, containerStatus)
 			if i == m.containerIndex {
@@ -190,12 +197,31 @@ func (m model) renderContainers(height, width int) string {
 				if c.State == "running" {
 					markerStyle = runningStyle
 				}
+				if isActing {
+					markerStyle = statusStyle
+				}
 				body := fmt.Sprintf("%s%s %-*s %s", indent, markerStyle.Render(marker), nameWidth, name, markerStyle.Render(containerStatus))
 				lines = append(lines, "  "+body)
 			}
 		}
 	}
 	return m.renderPane(lines, width, height, m.focus == 0)
+}
+
+func actionProgressLabel(action string) string {
+	if action == "stop" {
+		return "stopping…"
+	}
+	if action == "start" {
+		return "starting…"
+	}
+	if action == "restart" {
+		return "restarting…"
+	}
+	if action == "delete" {
+		return "deleting…"
+	}
+	return action + "…"
 }
 
 func (m model) renderDetails(height, width int) string {

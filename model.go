@@ -51,6 +51,8 @@ type actionMsg struct {
 
 type tickMsg time.Time
 
+type spinnerTickMsg time.Time
+
 type logsMsg struct {
 	reader *logReader
 	data   []byte
@@ -71,31 +73,34 @@ type actionMenuItem struct {
 type tickFactory func() tea.Cmd
 
 type model struct {
-	profiles       []profile
-	profileIndex   int
-	containers     []container
-	containerIndex int
-	focus          int
-	width          int
-	height         int
-	status         string
-	err            error
-	confirmDelete  bool
-	logs           []string
-	logPartial     string
-	logScroll      int
-	logFromStart   bool
-	follow         bool
-	reader         *logReader
-	expanded       map[string]bool
-	refreshID      uint64
-	nextActionID   uint64
-	activeActionID uint64
-	updateVersion  string
-	actionMenu     bool
-	actionIndex    int
-	backend        Backend
-	tick           tickFactory
+	profiles                []profile
+	profileIndex            int
+	containers              []container
+	containerIndex          int
+	focus                   int
+	width                   int
+	height                  int
+	status                  string
+	err                     error
+	confirmDelete           bool
+	logs                    []string
+	logPartial              string
+	logScroll               int
+	logFromStart            bool
+	follow                  bool
+	reader                  *logReader
+	expanded                map[string]bool
+	refreshID               uint64
+	nextActionID            uint64
+	activeActionID          uint64
+	activeActionContainerID string
+	activeActionLabel       string
+	spinnerFrame            int
+	updateVersion           string
+	actionMenu              bool
+	actionIndex             int
+	backend                 Backend
+	tick                    tickFactory
 }
 
 func initialModel() model {

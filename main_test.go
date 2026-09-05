@@ -137,6 +137,25 @@ func TestActiveActionAllowsNavigationAndKeepsStatus(t *testing.T) {
 	}
 }
 
+func TestActiveContainerShowsProgress(t *testing.T) {
+	m := model{
+		width:                   100,
+		height:                  24,
+		status:                  "stopping api",
+		containers:              []container{{ID: "api-id", Name: "api", State: "running", Status: "Up"}},
+		activeActionID:          1,
+		activeActionContainerID: "api-id",
+		activeActionLabel:       "stop",
+	}
+	if view := m.View(); !strings.Contains(view, "stopping…") || !strings.Contains(view, spinnerFrames[0]) {
+		t.Fatalf("active container progress missing: %q", view)
+	}
+	updated, command := m.Update(spinnerTickMsg(time.Now()))
+	if command == nil || updated.(model).spinnerFrame != 1 {
+		t.Fatalf("spinner tick = frame %d command %t", updated.(model).spinnerFrame, command != nil)
+	}
+}
+
 func TestHumanBytes(t *testing.T) {
 	for _, test := range []struct {
 		input int64
