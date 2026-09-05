@@ -62,9 +62,11 @@ func (c container) listName() string {
 }
 
 type refreshMsg struct {
-	profiles   []profile
-	containers []container
-	err        error
+	profileName string
+	requestID   uint64
+	profiles    []profile
+	containers  []container
+	err         error
 }
 
 type actionMsg struct {
@@ -128,14 +130,15 @@ type model struct {
 	follow         bool
 	reader         *logReader
 	expanded       map[string]bool
+	refreshID      uint64
 }
 
 func initialModel() model {
-	return model{focus: 0, status: "loading", expanded: make(map[string]bool)}
+	return model{focus: 0, status: "loading", expanded: make(map[string]bool), refreshID: 1}
 }
 
 func (m model) Init() tea.Cmd {
-	return tea.Batch(refreshCmd(), tickCmd())
+	return tea.Batch(refreshCmd(m.refreshID, ""), tickCmd())
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -147,12 +150,23 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 	case refreshMsg:
+		if msg.requestID != 0 && msg.requestID < m.refreshID {
+			return m, nil
+		}
+		if msg.requestID > m.refreshID {
+			m.refreshID = msg.requestID
+		}
 		oldID := m.selectedID()
 		oldGroup := m.selectedGroupName()
+		activeProfileName := m.currentProfileName()
 		previousErr, previousStatus := m.err, m.status
 		m.profiles, m.containers, m.err = msg.profiles, msg.containers, msg.err
 		m.syncExpanded()
-		if m.profileIndex >= len(m.profiles) {
+		if index := findProfile(m.profiles, activeProfileName); index >= 0 {
+			m.profileIndex = index
+		} else if index := findProfile(m.profiles, msg.profileName); index >= 0 {
+			m.profileIndex = index
+		} else if m.profileIndex >= len(m.profiles) {
 			m.profileIndex = max(0, len(m.profiles)-1)
 		}
 		if len(m.containers) == 0 {
@@ -194,9 +208,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.err, m.status = nil, msg.label+" complete"
 		}
-		return m, refreshCmd(m.currentProfileName())
+		return m, m.queueRefresh(m.currentProfileName())
 	case tickMsg:
-		return m, tea.Batch(refreshCmd(m.currentProfileName()), tickCmd())
+		return m, tea.Batch(m.queueRefresh(m.currentProfileName()), tickCmd())
 	case logsMsg:
 		if msg.reader != m.reader {
 			return m, nil
@@ -290,7 +304,7 @@ func (m model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.stopLogs()
 			m.containers, m.logs, m.logPartial, m.logScroll, m.logFromStart = nil, nil, "", 0, false
 			m.status = "switching to " + m.currentProfileName()
-			return m, refreshCmd(m.currentProfileName())
+			return m, m.queueRefresh(m.currentProfileName())
 		}
 	case "up", "k":
 		if m.focus == 0 && m.containerIndex > 0 {
@@ -304,7 +318,7 @@ func (m model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "r":
 		m.status = "refreshing"
-		return m, refreshCmd(m.currentProfileName())
+		return m, m.queueRefresh(m.currentProfileName())
 	case "s":
 		if p := m.currentProfile(); p == nil || !isRunning(p.Status) {
 			name := m.currentProfileName()
@@ -801,17 +815,36 @@ func (m model) currentProfileName() string {
 	return "default"
 }
 
-func refreshCmd(profileName ...string) tea.Cmd {
+func (m *model) queueRefresh(profileName string) tea.Cmd {
+	m.refreshID++
+	return refreshCmd(m.refreshID, profileName)
+}
+
+func findProfile(profiles []profile, name string) int {
+	for index, p := range profiles {
+		if p.Name == name {
+			return index
+		}
+	}
+	return -1
+}
+
+func refreshCmd(requestID uint64, profileName string) tea.Cmd {
 	return func() tea.Msg {
 		profiles, err := listProfiles()
 		if err != nil {
-			return refreshMsg{err: err}
+			name := profileName
+			if name == "" {
+				name = "default"
+			}
+			return refreshMsg{profileName: name, requestID: requestID, err: err}
 		}
-		name := "default"
-		if len(profileName) > 0 && profileName[0] != "" {
-			name = profileName[0]
-		} else if len(profiles) > 0 {
-			name = profiles[0].Name
+		name := profileName
+		if name == "" {
+			name = "default"
+			if len(profiles) > 0 {
+				name = profiles[0].Name
+			}
 		}
 		containers, dockerErr := listContainers(name)
 		for _, p := range profiles {
@@ -820,7 +853,7 @@ func refreshCmd(profileName ...string) tea.Cmd {
 				break
 			}
 		}
-		return refreshMsg{profiles: profiles, containers: containers, err: dockerErr}
+		return refreshMsg{profileName: name, requestID: requestID, profiles: profiles, containers: containers, err: dockerErr}
 	}
 }
 

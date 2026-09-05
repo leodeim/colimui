@@ -239,6 +239,47 @@ func TestRefreshPreservesLogError(t *testing.T) {
 	}
 }
 
+func TestRefreshDropsStaleResponse(t *testing.T) {
+	oldContainers := []container{{ID: "old", Name: "old", State: "running", Status: "Up"}}
+	m := model{
+		profiles:       []profile{{Name: "default", Status: "Running"}, {Name: "dev", Status: "Running"}},
+		profileIndex:   1,
+		containers:     oldContainers,
+		refreshID:      2,
+		containerIndex: 0,
+	}
+	updated, cmd := m.Update(refreshMsg{
+		profileName: "default",
+		requestID:   1,
+		profiles:    []profile{{Name: "default", Status: "Running"}},
+		containers:  []container{{ID: "stale", Name: "stale", State: "running", Status: "Up"}},
+	})
+	got := updated.(model)
+	if cmd != nil {
+		t.Fatal("stale refresh returned a command")
+	}
+	if got.currentProfileName() != "dev" || got.containers[0].ID != "old" {
+		t.Fatalf("stale refresh changed profile %q or containers %#v", got.currentProfileName(), got.containers)
+	}
+}
+
+func TestRefreshPreservesProfileName(t *testing.T) {
+	m := model{
+		profiles:     []profile{{Name: "default", Status: "Running"}, {Name: "dev", Status: "Running"}},
+		profileIndex: 1,
+		refreshID:    1,
+	}
+	updated, _ := m.Update(refreshMsg{
+		profileName: "dev",
+		requestID:   1,
+		profiles:    []profile{{Name: "dev", Status: "Running"}, {Name: "default", Status: "Running"}},
+	})
+	got := updated.(model)
+	if got.currentProfileName() != "dev" || got.profileIndex != 0 {
+		t.Fatalf("profile after refresh = %q at index %d", got.currentProfileName(), got.profileIndex)
+	}
+}
+
 func TestComposeLabels(t *testing.T) {
 	project, service := composeLabels("com.docker.compose.project=ides,com.docker.compose.service=postgres,other=value")
 	if project != "ides" || service != "postgres" {
