@@ -77,7 +77,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 	case actionMsg:
-		m.confirmDelete = false
+		if msg.requestID == 0 || msg.requestID != m.activeActionID {
+			return m, nil
+		}
+		m.activeActionID = 0
 		if msg.err != nil {
 			m.err, m.status = msg.err, msg.label+" failed"
 		} else {
@@ -149,10 +152,18 @@ func (m model) mouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 
 func (m model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
+	if m.activeActionID != 0 {
+		if key == "q" || key == "ctrl+c" {
+			m.stopLogs()
+			return m, tea.Quit
+		}
+		return m, nil
+	}
 	if m.confirmDelete {
 		switch key {
 		case "y", "enter":
 			if c := m.selectedContainer(); c != nil {
+				m.confirmDelete = false
 				m.status = "deleting " + c.Name
 				return m, m.actionCmd(m.currentProfileName(), "delete", "docker", "rm", c.ID)
 			}
@@ -292,9 +303,12 @@ func defaultTick() tea.Cmd {
 	return tea.Tick(refreshInterval, func(t time.Time) tea.Msg { return tickMsg(t) })
 }
 
-func (m model) actionCmd(profileName, label, command string, args ...string) tea.Cmd {
+func (m *model) actionCmd(profileName, label, command string, args ...string) tea.Cmd {
+	m.nextActionID++
+	m.activeActionID = m.nextActionID
+	requestID := m.activeActionID
 	backend := m.currentBackend()
 	return func() tea.Msg {
-		return actionMsg{label: label, err: backend.Action(profileName, command, args...)}
+		return actionMsg{requestID: requestID, label: label, err: backend.Action(profileName, command, args...)}
 	}
 }

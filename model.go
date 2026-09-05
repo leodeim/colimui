@@ -44,8 +44,9 @@ type refreshMsg struct {
 }
 
 type actionMsg struct {
-	label string
-	err   error
+	requestID uint64
+	label     string
+	err       error
 }
 
 type tickMsg time.Time
@@ -78,6 +79,8 @@ type model struct {
 	reader         *logReader
 	expanded       map[string]bool
 	refreshID      uint64
+	nextActionID   uint64
+	activeActionID uint64
 	backend        Backend
 	tick           tickFactory
 }

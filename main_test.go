@@ -19,6 +19,7 @@ type fakeBackend struct {
 	actionProfileName string
 	actionCommand     string
 	actionArgs        []string
+	actionCalls       int
 	logProfileName    string
 	logID             string
 	logFollow         bool
@@ -36,6 +37,7 @@ func (b *fakeBackend) Containers(profileName string) ([]container, error) {
 }
 
 func (b *fakeBackend) Action(profileName, command string, args ...string) error {
+	b.actionCalls++
 	b.actionProfileName = profileName
 	b.actionCommand = command
 	b.actionArgs = args
@@ -80,6 +82,42 @@ func TestModelInjectsBackendTimerAndLogFactory(t *testing.T) {
 	m.profiles, m.containers = backend.profiles, backend.containers
 	if cmd := m.reloadSelectedLogs(); cmd != nil || backend.logProfileName != "dev" || backend.logID != "id" {
 		t.Fatalf("log factory call = profile %q id %q", backend.logProfileName, backend.logID)
+	}
+}
+
+func TestDeleteConfirmationDispatchesOneAction(t *testing.T) {
+	backend := &fakeBackend{}
+	m := newModel(backend, func() tea.Cmd { return nil })
+	m.profiles = []profile{{Name: "default", Status: "Running"}}
+	m.containers = []container{{ID: "id", Name: "test", State: "exited", Status: "Exited"}}
+	m.confirmDelete = true
+	updated, cmd := m.key(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	got := updated.(model)
+	if cmd == nil || got.confirmDelete || got.activeActionID == 0 {
+		t.Fatalf("delete state = confirm %t active %d command %v", got.confirmDelete, got.activeActionID, cmd != nil)
+	}
+	updated, duplicate := got.key(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	if duplicate != nil || updated.(model).activeActionID != got.activeActionID {
+		t.Fatal("duplicate delete confirmation started another action")
+	}
+	if msg := cmd().(actionMsg); msg.requestID != got.activeActionID || backend.actionCalls != 1 {
+		t.Fatalf("delete message = %#v calls %d", msg, backend.actionCalls)
+	}
+}
+
+func TestActionIgnoresStaleCompletion(t *testing.T) {
+	m := newModel(&fakeBackend{}, func() tea.Cmd { return nil })
+	m.activeActionID = 2
+	m.status = "starting default"
+	updated, cmd := m.Update(actionMsg{requestID: 1, label: "stop"})
+	got := updated.(model)
+	if cmd != nil || got.activeActionID != 2 || got.status != "starting default" {
+		t.Fatalf("stale action changed state: %#v", got)
+	}
+	updated, cmd = got.Update(actionMsg{requestID: 2, label: "start"})
+	got = updated.(model)
+	if cmd == nil || got.activeActionID != 0 || got.status != "start complete" {
+		t.Fatalf("active action completion = %#v", got)
 	}
 }
 
