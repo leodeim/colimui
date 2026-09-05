@@ -8,9 +8,24 @@
   <a href="https://github.com/leodeim/colimui"><img src="https://img.shields.io/github/stars/leodeim/colimui" alt="github stars"></a>
 </p>
 
-# colimui
+# colimUI
 
-a small terminal ui for colima and docker.
+A small terminal UI app for `colima` and `docker`.
+
+## New Mac setup
+
+```sh
+bash scripts/setup-mac.sh
+```
+
+Installs Homebrew if needed, then Colima, Docker, and Docker Compose. Configures
+`docker compose`, starts the default Colima profile, selects its Docker context,
+and checks the engine connection. Supports Apple Silicon and Intel Macs and can
+be rerun. Existing Compose plugins are backed up before replacement.
+
+References: [Homebrew installation](https://docs.brew.sh/Installation),
+[Colima installation](https://colima.run/docs/installation/),
+[Compose Homebrew package](https://formulae.brew.sh/formula/docker-compose).
 
 ## run
 
@@ -18,7 +33,7 @@ a small terminal ui for colima and docker.
 go run .
 ```
 
-colimui uses the selected colima profile's docker context. press `s` to start a stopped profile.
+`colimUI` uses the selected colima profile's docker context. press `s` to start a stopped profile.
 
 ## keys
 
