@@ -35,6 +35,9 @@ func (m model) View() string {
 	if m.width == 0 {
 		return ""
 	}
+	if m.width < 60 || m.height < 16 {
+		return truncate("terminal too small — resize to 60×16", m.width)
+	}
 	dashboard := m.renderDashboard()
 	if m.actionMenu {
 		return overlay(m.width, m.height, dashboard, m.renderActionMenu())
@@ -83,7 +86,7 @@ func (m model) renderDashboard() string {
 	} else if m.updateVersion != "" {
 		footer = statusStyle.Render("update available: " + sanitizeText(m.updateVersion) + " — run colimui update")
 	}
-	return header + "\n" + panes + "\n" + footer
+	return ansi.Truncate(header, m.width, "") + "\n" + panes + "\n" + ansi.Truncate(footer, m.width, "")
 }
 
 func (m model) renderActionMenu() string {
@@ -251,6 +254,9 @@ func (m model) renderLogs(height, width int) string {
 	} else if len(m.logs) == 0 {
 		lines = append(lines, mutedStyle.Render("no logs"))
 	} else {
+		if m.logsTruncated {
+			lines = append(lines, mutedStyle.Render("older logs truncated"))
+		}
 		for _, line := range m.visibleLogs(max(0, height-len(lines)-1)) {
 			lines = append(lines, truncate(line, max(10, width-2)))
 		}
@@ -263,7 +269,7 @@ func (m model) renderPane(lines []string, width, height int, focused bool) strin
 	if focused {
 		border = accent
 	}
-	return lipgloss.NewStyle().Width(width).Height(height).Padding(0, 1).Border(lipgloss.RoundedBorder()).BorderForeground(border).Render(strings.Join(lines, "\n"))
+	return lipgloss.NewStyle().Width(max(1, width-2)).Height(height).Padding(0, 1).Border(lipgloss.RoundedBorder()).BorderForeground(border).Render(strings.Join(lines, "\n"))
 }
 
 func humanBytes(value int64) string {
@@ -285,20 +291,21 @@ func humanBytes(value int64) string {
 
 func truncate(value string, width int) string {
 	value = sanitizeText(value)
-	if width < 4 || len(value) <= width {
+	if width < 4 || ansi.StringWidth(value) <= width {
 		return value
 	}
-	return value[:width-3] + "..."
+	return ansi.Truncate(value, width, "...")
 }
 
 func middleTruncate(value string, width int) string {
 	value = sanitizeText(value)
-	if width < 4 || len(value) <= width {
+	if width < 4 || ansi.StringWidth(value) <= width {
 		return value
 	}
 	left := (width - 3 + 1) / 2
 	right := width - 3 - left
-	return value[:left] + "..." + value[len(value)-right:]
+	valueWidth := ansi.StringWidth(value)
+	return ansi.Truncate(value, left, "") + "..." + ansi.Cut(value, max(0, valueWidth-right), valueWidth)
 }
 
 func statusLabel(value string, width int) string {

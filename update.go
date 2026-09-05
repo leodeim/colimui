@@ -28,11 +28,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 	case refreshMsg:
-		if msg.requestID != 0 && msg.requestID < m.refreshID {
-			return m, nil
-		}
-		if msg.requestID > m.refreshID {
-			m.refreshID = msg.requestID
+		if msg.requestID != 0 {
+			if msg.requestID < m.appliedRefreshID {
+				return m, nil
+			}
+			if len(m.profiles) > 0 && msg.profileName != "" && msg.profileName != m.currentProfileName() {
+				return m, nil
+			}
+			m.appliedRefreshID = msg.requestID
 		}
 		oldID := m.selectedID()
 		oldGroup := m.selectedGroupName()
@@ -67,9 +70,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.status = "ready"
 		}
+		m.validateDeleteConfirmation()
 		if oldID != m.selectedID() {
 			m.stopLogs()
-			m.logs, m.logPartial, m.logScroll, m.logFromStart = nil, "", 0, false
+			m.logs, m.logPartial, m.logScroll, m.logFromStart, m.logBytes, m.logsTruncated, m.partialTrimmed = nil, "", 0, false, 0, false, false
 			if m.selectedID() != "" {
 				m.follow = false
 				var err error
@@ -166,20 +170,25 @@ func (m model) mouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 
 func (m model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
+	if key == "ctrl+c" {
+		m.stopLogs()
+		return m, tea.Quit
+	}
 	if m.actionMenu {
 		return m.actionMenuKey(msg)
 	}
 	if m.confirmDelete {
 		switch key {
 		case "y", "enter":
-			if c := m.selectedContainer(); c != nil {
+			if c := m.deleteTarget(); c != nil && c.State != "running" {
 				m.confirmDelete = false
+				m.deleteProfile, m.deleteID = "", ""
 				m.status = "deleting " + c.Name
 				return m, m.actionCmd(m.currentProfileName(), "delete", "docker", "rm", c.ID)
 			}
+			m.cancelDeleteConfirmation("delete canceled: container changed")
 		case "n", "esc", "q":
-			m.confirmDelete = false
-			m.status = "ready"
+			m.cancelDeleteConfirmation("ready")
 		}
 		return m, nil
 	}
@@ -200,8 +209,9 @@ func (m model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			} else {
 				m.profileIndex = (m.profileIndex + 1) % len(m.profiles)
 			}
+			m.cancelDeleteConfirmation("ready")
 			m.stopLogs()
-			m.containers, m.logs, m.logPartial, m.logScroll, m.logFromStart = nil, nil, "", 0, false
+			m.containers, m.logs, m.logPartial, m.logScroll, m.logFromStart, m.logBytes, m.logsTruncated, m.partialTrimmed = nil, nil, "", 0, false, 0, false, false
 			m.status = "switching to " + m.currentProfileName()
 			return m, m.queueRefresh(m.currentProfileName())
 		}
@@ -267,6 +277,7 @@ func (m model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.status = "stop the container before deleting it"
 			} else {
 				m.confirmDelete = true
+				m.deleteProfile, m.deleteID = m.currentProfileName(), c.ID
 				m.status = "delete " + c.Name + "? y/n"
 			}
 		}
@@ -365,6 +376,31 @@ func shortcutKey(shortcut string) tea.KeyMsg {
 		return tea.KeyMsg{Type: tea.KeyHome}
 	}
 	return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(shortcut)}
+}
+
+func (m *model) validateDeleteConfirmation() {
+	if !m.confirmDelete || m.deleteTarget() != nil {
+		return
+	}
+	m.cancelDeleteConfirmation("delete canceled: container changed")
+}
+
+func (m model) deleteTarget() *container {
+	if !m.confirmDelete || m.deleteProfile != m.currentProfileName() {
+		return nil
+	}
+	for index := range m.containers {
+		if m.containers[index].ID == m.deleteID {
+			return &m.containers[index]
+		}
+	}
+	return nil
+}
+
+func (m *model) cancelDeleteConfirmation(status string) {
+	m.confirmDelete = false
+	m.deleteProfile, m.deleteID = "", ""
+	m.status = status
 }
 
 func (m *model) queueRefresh(profileName string) tea.Cmd {

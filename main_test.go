@@ -91,6 +91,7 @@ func TestDeleteConfirmationDispatchesOneAction(t *testing.T) {
 	m.profiles = []profile{{Name: "default", Status: "Running"}}
 	m.containers = []container{{ID: "id", Name: "test", State: "exited", Status: "Exited"}}
 	m.confirmDelete = true
+	m.deleteProfile, m.deleteID = "default", "id"
 	updated, cmd := m.key(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
 	got := updated.(model)
 	if cmd == nil || got.confirmDelete || len(got.activeActions) != 1 {
@@ -105,6 +106,67 @@ func TestDeleteConfirmationDispatchesOneAction(t *testing.T) {
 	}
 	if msg := cmd().(actionMsg); msg.requestID != requestID || backend.actionCalls != 1 {
 		t.Fatalf("delete message = %#v calls %d", msg, backend.actionCalls)
+	}
+}
+
+func TestDeleteConfirmationStaysWithOriginalContainer(t *testing.T) {
+	backend := &fakeBackend{}
+	m := newModel(backend, func() tea.Cmd { return nil })
+	m.width = 80
+	m.profiles = []profile{{Name: "default", Status: "Running"}}
+	m.containers = []container{{ID: "one", Name: "one", State: "exited"}, {ID: "two", Name: "two", State: "exited"}}
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	updated, _ = updated.(model).Update(tea.MouseMsg(tea.MouseEvent{X: 2, Action: tea.MouseActionPress, Button: tea.MouseButtonWheelDown}))
+	updated, command := updated.(model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	if command == nil {
+		t.Fatal("delete confirmation did not dispatch")
+	}
+	_ = command()
+	if len(backend.actionArgs) == 0 || backend.actionArgs[len(backend.actionArgs)-1] != "one" {
+		t.Fatalf("deleted %v, want container one", backend.actionArgs)
+	}
+}
+
+func TestCtrlCQuitsFromModals(t *testing.T) {
+	for _, modal := range []model{{actionMenu: true}, {confirmDelete: true}} {
+		_, command := modal.key(tea.KeyMsg{Type: tea.KeyCtrlC})
+		if command == nil {
+			t.Fatal("Ctrl+C returned no quit command")
+		}
+		if _, ok := command().(tea.QuitMsg); !ok {
+			t.Fatal("Ctrl+C did not quit")
+		}
+	}
+}
+
+func TestRefreshAcceptsCompletedRequestWhenNewerOneIsQueued(t *testing.T) {
+	m := newModel(&fakeBackend{}, func() tea.Cmd { return nil })
+	m.refreshID = 10
+	m.profiles = []profile{{Name: "default", Status: "Running"}}
+	updated, _ := m.Update(tickMsg{})
+	updated, _ = updated.(model).Update(refreshMsg{requestID: 10, profileName: "default", profiles: m.profiles, containers: []container{{ID: "new", Name: "new"}}})
+	if got := updated.(model).containers[0].ID; got != "new" {
+		t.Fatalf("completed refresh was discarded: %q", got)
+	}
+}
+
+func TestLogBuffersAreBounded(t *testing.T) {
+	m := model{}
+	chunk := strings.Repeat("x", 4096)
+	for i := 0; i < 512; i++ {
+		m.appendLogs(chunk)
+	}
+	if len(m.logPartial) > maxLogPartialBytes {
+		t.Fatalf("partial log retained %d bytes", len(m.logPartial))
+	}
+}
+
+func TestViewFitsSmallTerminals(t *testing.T) {
+	for _, size := range [][2]int{{80, 24}, {120, 40}, {40, 12}, {20, 5}} {
+		m := model{width: size[0], height: size[1], status: "ready"}
+		if view := m.View(); lipgloss.Width(view) > m.width || lipgloss.Height(view) > m.height {
+			t.Fatalf("terminal %dx%d, view %dx%d", m.width, m.height, lipgloss.Width(view), lipgloss.Height(view))
+		}
 	}
 }
 

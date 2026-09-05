@@ -11,7 +11,11 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-const maxLogLines = 10000
+const (
+	maxLogLines        = 10000
+	maxLogBytes        = 8 << 20
+	maxLogPartialBytes = 1 << 20
+)
 
 type logReader struct {
 	cancel   context.CancelFunc
@@ -41,11 +45,16 @@ func (m *model) appendLogs(data string) {
 	data = m.logPartial + data
 	parts := strings.Split(data, "\n")
 	m.logPartial = parts[len(parts)-1]
-	for _, line := range parts[:len(parts)-1] {
-		m.logs = append(m.logs, strings.TrimSuffix(line, "\r"))
+	if len(m.logPartial) > maxLogPartialBytes {
+		m.logPartial = m.logPartial[len(m.logPartial)-maxLogPartialBytes:]
+		m.partialTrimmed = true
 	}
-	if len(m.logs) > maxLogLines {
-		m.logs = m.logs[len(m.logs)-maxLogLines:]
+	for _, line := range parts[:len(parts)-1] {
+		if m.partialTrimmed {
+			line = "[log line truncated] " + line
+			m.partialTrimmed = false
+		}
+		m.appendLogLine(strings.TrimSuffix(line, "\r"))
 	}
 	if m.logScroll == 0 {
 		return
@@ -55,11 +64,23 @@ func (m *model) appendLogs(data string) {
 
 func (m *model) finishLogs() {
 	if m.logPartial != "" {
-		m.logs = append(m.logs, strings.TrimSuffix(m.logPartial, "\r"))
+		line := m.logPartial
+		if m.partialTrimmed {
+			line = "[log line truncated] " + line
+			m.partialTrimmed = false
+		}
+		m.appendLogLine(strings.TrimSuffix(line, "\r"))
 		m.logPartial = ""
 	}
-	if len(m.logs) > maxLogLines {
-		m.logs = m.logs[len(m.logs)-maxLogLines:]
+}
+
+func (m *model) appendLogLine(line string) {
+	m.logs = append(m.logs, line)
+	m.logBytes += len(line)
+	for len(m.logs) > maxLogLines || m.logBytes > maxLogBytes {
+		m.logBytes -= len(m.logs[0])
+		m.logs = m.logs[1:]
+		m.logsTruncated = true
 	}
 }
 
@@ -79,7 +100,7 @@ func (m *model) scrollLogs(key string) {
 func (m *model) reloadSelectedLogs(all ...bool) tea.Cmd {
 	fromStart := len(all) > 0 && all[0]
 	m.stopLogs()
-	m.logs, m.logPartial, m.logScroll = nil, "", 0
+	m.logs, m.logPartial, m.logScroll, m.logBytes, m.logsTruncated, m.partialTrimmed = nil, "", 0, 0, false, false
 	m.logFromStart = fromStart
 	m.err = nil
 	if m.status == "logs failed" {
