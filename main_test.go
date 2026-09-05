@@ -6,10 +6,47 @@ import (
 	"os/exec"
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
+
+type fakeBackend struct {
+	profiles          []profile
+	containers        []container
+	profileName       string
+	actionProfileName string
+	actionCommand     string
+	actionArgs        []string
+	logProfileName    string
+	logID             string
+	logFollow         bool
+	logFromStart      bool
+	logsErr           error
+}
+
+func (b *fakeBackend) Profiles() ([]profile, error) {
+	return b.profiles, nil
+}
+
+func (b *fakeBackend) Containers(profileName string) ([]container, error) {
+	b.profileName = profileName
+	return b.containers, nil
+}
+
+func (b *fakeBackend) Action(profileName, command string, args ...string) error {
+	b.actionProfileName = profileName
+	b.actionCommand = command
+	b.actionArgs = args
+	return nil
+}
+
+func (b *fakeBackend) OpenLogs(profileName, id string, follow, fromStart bool) (*logReader, error) {
+	b.logProfileName, b.logID = profileName, id
+	b.logFollow, b.logFromStart = follow, fromStart
+	return nil, b.logsErr
+}
 
 func TestDockerContext(t *testing.T) {
 	if got := dockerContext("default"); got != "colima" {
@@ -17,6 +54,32 @@ func TestDockerContext(t *testing.T) {
 	}
 	if got := dockerContext("dev"); got != "colima-dev" {
 		t.Fatalf("profile context = %q", got)
+	}
+}
+
+func TestModelInjectsBackendTimerAndLogFactory(t *testing.T) {
+	backend := &fakeBackend{
+		profiles:   []profile{{Name: "dev", Status: "Running"}},
+		containers: []container{{ID: "id", Name: "test", State: "running", Status: "Up"}},
+	}
+	ticks := 0
+	m := newModel(backend, func() tea.Cmd {
+		ticks++
+		return func() tea.Msg { return tickMsg(time.Now()) }
+	})
+	msg := m.refreshCmd(1, "dev")().(refreshMsg)
+	if backend.profileName != "dev" || msg.profileName != "dev" || len(msg.containers) != 1 {
+		t.Fatalf("refresh backend call = profile %q message %#v", backend.profileName, msg)
+	}
+	if tick := m.nextTick(); tick == nil || ticks != 1 {
+		t.Fatalf("timer factory calls = %d", ticks)
+	}
+	if action := m.actionCmd("dev", "restart", "docker", "restart", "id")().(actionMsg); action.err != nil || backend.actionProfileName != "dev" || backend.actionCommand != "docker" || strings.Join(backend.actionArgs, " ") != "restart id" {
+		t.Fatalf("action backend call = profile %q command %q args %#v", backend.actionProfileName, backend.actionCommand, backend.actionArgs)
+	}
+	m.profiles, m.containers = backend.profiles, backend.containers
+	if cmd := m.reloadSelectedLogs(); cmd != nil || backend.logProfileName != "dev" || backend.logID != "id" {
+		t.Fatalf("log factory call = profile %q id %q", backend.logProfileName, backend.logID)
 	}
 }
 
