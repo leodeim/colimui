@@ -110,6 +110,9 @@ func (m model) renderDashboard() string {
 	if m.searchEditing {
 		footer = statusStyle.Render("search: " + sanitizeText(m.searchQuery) + "▏  enter apply · esc cancel · ctrl+u clear")
 	}
+	if m.logSearchEditing {
+		footer = statusStyle.Render("log search: " + sanitizeText(m.logQuery) + "▏  enter apply · esc cancel · ctrl+u clear")
+	}
 	return ansi.Truncate(header, m.width, "") + "\n" + panes + "\n" + ansi.Truncate(footer, m.width, "")
 }
 
@@ -282,17 +285,23 @@ func (m model) renderLogs(height, width int) string {
 	if m.focus == 1 {
 		heading = selectedStyle.Render("▸ " + heading)
 	}
-	lines := []string{heading + "  " + map[bool]string{true: "following", false: "paused"}[m.follow]}
+	lines := []string{heading + "  " + map[bool]string{true: "following · f pause", false: "paused · f resume"}[m.follow]}
+	if m.logQuery != "" {
+		lines = append(lines, mutedStyle.Render(truncate(fmt.Sprintf("/%s · %d matches", m.logQuery, len(m.filteredLogs())), width-4)))
+	}
+	if m.logsTruncated || m.partialTrimmed {
+		lines = append(lines, mutedStyle.Render("logs truncated (memory limit)"))
+	}
 	if m.selectedContainer() == nil {
 		lines = append(lines, "", mutedStyle.Render("select a service"))
 	} else if len(m.logs) == 0 {
 		lines = append(lines, mutedStyle.Render("no logs"))
 	} else {
-		if m.logsTruncated {
-			lines = append(lines, mutedStyle.Render("older logs truncated"))
+		if len(m.filteredLogs()) == 0 {
+			lines = append(lines, mutedStyle.Render("no matching logs"))
 		}
 		for _, line := range m.visibleLogs(max(0, height-len(lines)-1)) {
-			lines = append(lines, truncate(line, max(10, width-2)))
+			lines = append(lines, truncate(m.logText(line), max(10, width-2)))
 		}
 	}
 	return m.renderPane(lines, width, height, m.focus == 1)

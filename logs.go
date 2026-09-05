@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -27,6 +28,7 @@ type logReader struct {
 }
 
 func (m model) visibleLogs(count int) []string {
+	m.logs = m.filteredLogs()
 	if count <= 0 || len(m.logs) == 0 {
 		return nil
 	}
@@ -44,17 +46,18 @@ func (m model) visibleLogs(count int) []string {
 func (m *model) appendLogs(data string) {
 	data = m.logPartial + data
 	parts := strings.Split(data, "\n")
-	m.logPartial = parts[len(parts)-1]
-	if len(m.logPartial) > maxLogPartialBytes {
-		m.logPartial = m.logPartial[len(m.logPartial)-maxLogPartialBytes:]
-		m.partialTrimmed = true
-	}
+	m.logPartial = strings.Clone(parts[len(parts)-1])
 	for _, line := range parts[:len(parts)-1] {
 		if m.partialTrimmed {
 			line = "[log line truncated] " + line
 			m.partialTrimmed = false
 		}
 		m.appendLogLine(strings.TrimSuffix(line, "\r"))
+	}
+	if len(m.logPartial) > maxLogPartialBytes {
+		m.logPartial = strings.Clone(m.logPartial[len(m.logPartial)-maxLogPartialBytes:])
+		m.logsTruncated = true
+		m.partialTrimmed = true
 	}
 	if m.logScroll == 0 {
 		return
@@ -75,10 +78,11 @@ func (m *model) finishLogs() {
 }
 
 func (m *model) appendLogLine(line string) {
-	m.logs = append(m.logs, line)
+	m.logs = append(m.logs, strings.Clone(line))
 	m.logBytes += len(line)
 	for len(m.logs) > maxLogLines || m.logBytes > maxLogBytes {
 		m.logBytes -= len(m.logs[0])
+		m.logs[0] = ""
 		m.logs = m.logs[1:]
 		m.logsTruncated = true
 	}
@@ -87,7 +91,7 @@ func (m *model) appendLogLine(line string) {
 func (m *model) scrollLogs(key string) {
 	switch key {
 	case "pgup":
-		m.logScroll = min(len(m.logs), m.logScroll+10)
+		m.logScroll = min(len(m.filteredLogs()), m.logScroll+10)
 	case "pgdown":
 		m.logScroll = max(0, m.logScroll-10)
 	case "home":
@@ -175,4 +179,61 @@ func (r *logReader) exitError() error {
 	r.waitMu.Lock()
 	defer r.waitMu.Unlock()
 	return r.waitErr
+}
+
+// Docker timestamps are always captured; toggling only changes presentation.
+func (m model) logText(line string) string {
+	if !m.logTimestamps {
+		if stamp, rest, ok := strings.Cut(line, " "); ok {
+			if _, err := time.Parse(time.RFC3339Nano, stamp); err == nil {
+				line = rest
+			}
+		}
+	}
+	return sanitizeText(line)
+}
+
+func (m model) filteredLogs() []string {
+	query := strings.ToLower(strings.TrimSpace(m.logQuery))
+	result := make([]string, 0, len(m.logs))
+	for _, line := range m.logs {
+		if query == "" || strings.Contains(strings.ToLower(sanitizeText(line)), query) {
+			result = append(result, line)
+		}
+	}
+	return result
+}
+
+func (m model) logSearchKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.Type {
+	case tea.KeyEnter:
+		m.logSearchEditing = false
+	case tea.KeyEsc:
+		m.logQuery, m.logSearchEditing = m.logSearchBefore, false
+	case tea.KeyCtrlU:
+		m.logQuery = ""
+	case tea.KeyBackspace:
+		r := []rune(m.logQuery)
+		if len(r) > 0 {
+			m.logQuery = string(r[:len(r)-1])
+		}
+	case tea.KeySpace:
+		if len([]rune(m.logQuery)) < 256 {
+			m.logQuery += " "
+		}
+	case tea.KeyRunes:
+		if len([]rune(m.logQuery))+len(msg.Runes) <= 256 {
+			m.logQuery += string(msg.Runes)
+		}
+	}
+	m.logScroll = 0
+	return m, nil
+}
+
+func (m *model) pauseLogs() {
+	if m.follow {
+		m.stopLogs()
+		m.finishLogs()
+		m.follow = false
+	}
 }

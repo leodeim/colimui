@@ -36,7 +36,7 @@ func (execBackend) Action(profileName, command string, args ...string) error {
 
 func (execBackend) OpenLogs(profileName, id string, follow, fromStart bool) (*logReader, error) {
 	ctx, cancel := context.WithCancel(context.Background())
-	args := []string{"logs"}
+	args := []string{"logs", "--timestamps"}
 	if !fromStart {
 		args = append(args, "--tail", "200")
 	}

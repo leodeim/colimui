@@ -57,7 +57,9 @@ go install github.com/leodeim/colimui@latest
 | `d` | Open deletion confirmation for a stopped container |
 | `y` / `n` | Confirm/cancel deletion |
 | `l` | Reload the selected container's logs |
-| `f` | Toggle following logs |
+| `f` | Pause streaming without clearing logs, or resume from the latest 200 lines |
+| `L` (`Shift+L`) | Search retained log text (pauses streaming) |
+| `T` (`Shift+T`) | Show/hide Docker timestamps |
 | `Home` | Load log history from the start, subject to retention limits |
 | `Page Up` / `Page Down` | Scroll logs |
 | `End` | Jump to the latest logs |

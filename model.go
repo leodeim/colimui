@@ -78,6 +78,10 @@ type actionMenuItem struct {
 type tickFactory func() tea.Cmd
 
 type model struct {
+	logQuery         string
+	logSearchEditing bool
+	logSearchBefore  string
+	logTimestamps    bool
 	searchQuery      string
 	searchEditing    bool
 	searchBefore     string

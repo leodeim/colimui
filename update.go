@@ -118,6 +118,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.err, m.status = msg.err, "logs failed"
 		}
 		if msg.done {
+			m.follow = false
 			partial := strings.TrimSpace(m.logPartial)
 			m.finishLogs()
 			if msg.err != nil && partial == "" && len(m.logs) > 0 {
@@ -159,9 +160,10 @@ func (m model) mouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.focus = 1
+	m.pauseLogs()
 	switch event.Button {
 	case tea.MouseButtonWheelUp:
-		m.logScroll = min(len(m.logs), m.logScroll+3)
+		m.logScroll = min(len(m.filteredLogs()), m.logScroll+3)
 	case tea.MouseButtonWheelDown:
 		m.logScroll = max(0, m.logScroll-3)
 	}
@@ -173,6 +175,9 @@ func (m model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if key == "ctrl+c" {
 		m.stopLogs()
 		return m, tea.Quit
+	}
+	if m.logSearchEditing {
+		return m.logSearchKey(msg)
 	}
 	if m.searchEditing {
 		return m.searchKey(msg)
@@ -200,6 +205,11 @@ func (m model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	switch key {
+	case "L":
+		m.logSearchEditing, m.logSearchBefore, m.focus = true, m.logQuery, 1
+		m.pauseLogs()
+	case "T":
+		m.logTimestamps = !m.logTimestamps
 	case "/":
 		m.searchEditing, m.searchBefore = true, m.searchQuery
 		m.focus = 0
@@ -302,13 +312,18 @@ func (m model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "l":
 		return m, m.reloadSelectedLogs()
 	case "f":
-		m.follow = !m.follow
+		if m.follow {
+			m.pauseLogs()
+			return m, nil
+		}
+		m.follow = true
 		return m, m.reloadSelectedLogs()
 	case "home":
 		m.follow = false
 		m.status = "loading all logs"
 		return m, m.reloadSelectedLogs(true)
 	case "pgup", "pgdown", "end":
+		m.pauseLogs()
 		m.scrollLogs(key)
 	}
 	return m, nil
@@ -362,6 +377,8 @@ func (m model) actionMenuItems() []actionMenuItem {
 		{label: "reload logs for " + containerName, shortcut: "l", enabled: container != nil},
 		{label: followLabel, shortcut: "f", enabled: container != nil},
 		{label: "load all logs for " + containerName, shortcut: "home", enabled: container != nil},
+		{label: "search log text", shortcut: "L", enabled: container != nil},
+		{label: "toggle log timestamps", shortcut: "T", enabled: true},
 		{label: "refresh", shortcut: "r", enabled: true},
 		{label: "search containers", shortcut: "/", enabled: true},
 		{label: map[bool]string{false: "show running only", true: "show all states"}[m.runningOnly], shortcut: "R", enabled: true},
