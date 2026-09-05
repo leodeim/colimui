@@ -12,6 +12,27 @@
 
 A small terminal UI app for `colima` and `docker`.
 
+## Install
+
+Install the latest release—no Go installation required:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/leodeim/colimui/main/scripts/install.sh | sh
+```
+
+The installer supports macOS and Linux on Intel/AMD and ARM CPUs. It downloads binary, verifies itschecksum, and installs to `/usr/local/bin`.
+Set `INSTALL_DIR` to install elsewhere:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/leodeim/colimui/main/scripts/install.sh | INSTALL_DIR="$HOME/.local/bin" sh
+```
+
+Install using Go:
+
+```sh
+go install github.com/leodeim/colimui@latest
+```
+
 ## New Mac setup
 
 ```sh
@@ -27,14 +48,12 @@ References: [Homebrew installation](https://docs.brew.sh/Installation),
 [Colima installation](https://colima.run/docs/installation/),
 [Compose Homebrew package](https://formulae.brew.sh/formula/docker-compose).
 
-## run
+## Run
 
 ```sh
-go run .
+colimui
 ```
 
-`colimUI` uses the selected colima profile's docker context. press `s` to start a stopped profile.
-
-## keys
+## Keys
 
 `s` start colima · `x` stop colima · `enter` expand groups/start-stop services · `t` restart · `d` delete · `l` reload logs · `f` follow logs · `r` refresh · `q` quit

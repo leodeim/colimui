@@ -1,0 +1,52 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and publish release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: "1.26.x"
+
+      - name: Run tests
+        run: go test ./...
+
+      - name: Build release binaries
+        env:
+          CGO_ENABLED: "0"
+        run: |
+          mkdir -p dist
+          for target in darwin/amd64 darwin/arm64 linux/amd64 linux/arm64; do
+            os=${target%/*}
+            arch=${target#*/}
+            GOOS="$os" GOARCH="$arch" go build -trimpath -ldflags="-s -w -X main.version=${GITHUB_REF_NAME}" -o "dist/colimui_${os}_${arch}" .
+          done
+
+      - name: Create checksums
+        working-directory: dist
+        run: sha256sum colimui_* > checksums.txt
+
+      - name: Publish release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
+            gh release upload "${GITHUB_REF_NAME}" dist/* --clobber
+          else
+            gh release create "${GITHUB_REF_NAME}" dist/* \
+              --generate-notes \
+              --title "colimUI ${GITHUB_REF_NAME}"
+          fi
