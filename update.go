@@ -16,11 +16,33 @@ const (
 )
 
 func (m model) Init() tea.Cmd {
-	return tea.Batch(m.refreshCmd(m.refreshID, ""), m.nextTick(), checkForUpdateCmd())
+	return tea.Batch(m.refreshCmd(m.refreshID, ""), m.nextTick(), checkForUpdateCmd(), statsTick())
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case statsTickMsg:
+		return m, tea.Batch(m.pollStats(), m.pollStorage(), statsTick())
+	case storageMsg:
+		m.storageBusy = false
+		if msg.profile == m.currentProfileName() {
+			m.storage = msg
+		}
+		return m, nil
+	case statsMsg:
+		m.statsBusy = false
+		if msg.aggregate {
+			if msg.profile == m.currentProfileName() {
+				m.overall = msg
+			}
+			return m, nil
+		}
+		c := m.selectedContainer()
+		if c != nil && isRunning(c.State) && msg.id == c.ID && msg.profile == m.currentProfileName() {
+			m.stats = msg
+		}
+		return m, nil
+
 	case tea.KeyMsg:
 		return m.key(msg)
 	case tea.MouseMsg:
@@ -142,6 +164,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) mouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	if m.usageOverview {
+		return m, nil
+	}
 	event := tea.MouseEvent(msg)
 	if event.Action != tea.MouseActionPress || !event.IsWheel() {
 		return m, nil
@@ -176,6 +201,12 @@ func (m model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.stopLogs()
 		return m, tea.Quit
 	}
+	if m.usageOverview {
+		if key == "esc" || key == "q" || key == "u" || key == "?" {
+			m.usageOverview = false
+		}
+		return m, nil
+	}
 	if m.logSearchEditing {
 		return m.logSearchKey(msg)
 	}
@@ -205,6 +236,9 @@ func (m model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	switch key {
+	case "u":
+		m.usageOverview = true
+		return m, tea.Batch(m.pollStats(), m.pollStorage())
 	case "L":
 		m.logSearchEditing, m.logSearchBefore, m.focus = true, m.logQuery, 1
 		m.pauseLogs()
@@ -379,6 +413,7 @@ func (m model) actionMenuItems() []actionMenuItem {
 		{label: "load all logs for " + containerName, shortcut: "home", enabled: container != nil},
 		{label: "search log text", shortcut: "L", enabled: container != nil},
 		{label: "toggle log timestamps", shortcut: "T", enabled: true},
+		{label: "Docker usage overview", shortcut: "u", enabled: true},
 		{label: "refresh", shortcut: "r", enabled: true},
 		{label: "search containers", shortcut: "/", enabled: true},
 		{label: map[bool]string{false: "show running only", true: "show all states"}[m.runningOnly], shortcut: "R", enabled: true},

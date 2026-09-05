@@ -3,19 +3,19 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/leodeim/colimui/actions/workflows/build.yml"><img src="https://github.com/leodeim/colimui/actions/workflows/build.yml/badge.svg" alt="Build and Release"></a>
+  <a href="https://github.com/leodeim/colimui/actions/workflows/release.yml"><img src="https://github.com/leodeim/colimui/actions/workflows/release.yml/badge.svg" alt="Build and Release"></a>
   <a href="https://github.com/leodeim/colimui/releases/latest"><img src="https://img.shields.io/github/v/release/leodeim/colimui" alt="Latest Release"></a>
   <a href="https://github.com/leodeim/colimui/releases"><img src="https://img.shields.io/github/downloads/leodeim/colimui/total" alt="Downloads"></a>
   <a href="https://github.com/leodeim/colimui/blob/main/LICENSE"><img src="https://img.shields.io/github/license/leodeim/colimui" alt="License"></a>
 </p>
 
-# colimUI
+# ColimUI
 
-A small terminal UI app for `colima` and `docker`.
+A lightweight terminal UI for Colima and Docker.
 
 ## Install
 
-The installer supports macOS and Linux on Intel/AMD and ARM CPUs. It downloads binary, verifies its checksum, and installs to `/usr/local/bin`.
+The installer supports macOS and Linux on Intel/AMD and ARM CPUs. It downloads binary, verifies its checksum, and installs to `/usr/local/bin`; set `INSTALL_DIR` to override it. 
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/leodeim/colimui/main/scripts/install.sh | sh
@@ -44,6 +44,7 @@ go install github.com/leodeim/colimui@latest
 | Key | Action |
 | --- | --- |
 | `?` | Open or close the Actions menu |
+| `u` | Open/close Docker usage overview: total CPU, RAM, and storage |
 | `↑` / `↓` or `k` / `j` | Select a container or menu item |
 | `Tab`, `←`, `→` | Switch focus between containers and logs |
 | `Enter` | Start/stop the selected container, expand/collapse a Compose group, or run the selected menu action |
@@ -66,17 +67,13 @@ go install github.com/leodeim/colimui@latest
 | `q` | Quit, or close the current menu |
 | `Ctrl+C` | Quit from any mode |
 
+## New macOS setup script
 
-## New Mac setup
+Installs Homebrew if needed, then Colima, Docker, Docker Compose, and the latest ColimUI release.
 
 ```sh
-bash scripts/setup-mac.sh
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/leodeim/colimui/main/scripts/setup-mac.sh)"
 ```
-
-Installs Homebrew if needed, then Colima, Docker, and Docker Compose. Configures
-`docker compose`, starts the default Colima profile, selects its Docker context,
-and checks the engine connection. Supports Apple Silicon and Intel Macs and can
-be rerun. Existing Compose plugins are backed up before replacement.
 
 References: [Homebrew installation](https://docs.brew.sh/Installation),
 [Colima installation](https://colima.run/docs/installation/),

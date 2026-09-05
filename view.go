@@ -39,6 +39,9 @@ func (m model) View() string {
 		return truncate("terminal too small — resize to 60×16", m.width)
 	}
 	dashboard := m.renderDashboard()
+	if m.usageOverview {
+		return overlay(m.width, m.height, dashboard, m.renderUsageOverview())
+	}
 	if m.confirmDelete {
 		return overlay(m.width, m.height, dashboard, m.renderDeleteConfirmation())
 	}
@@ -275,8 +278,16 @@ func (m model) renderDetails(height, width int) string {
 		}
 	} else {
 		valueWidth := max(10, width-10)
-		lines = append(lines, "", titleStyle.Render(truncate(c.Name, max(10, width-2))), "", "state   "+truncate(c.State, valueWidth), "status  "+truncate(c.Status, valueWidth), "image   "+truncate(c.Image, valueWidth), "id      "+truncate(c.ID, valueWidth), "command "+truncate(c.Command, valueWidth), "ports   "+truncate(c.Ports, valueWidth))
+		lines = append(lines, titleStyle.Render(truncate(c.Name, max(10, width-2))), "state   "+truncate(c.State+" · "+c.Status, valueWidth))
+		lines = append(lines, m.resourceLines(width-4)...)
+		lines = append(lines, "image   "+truncate(c.Image, valueWidth), "id      "+truncate(c.ID, valueWidth), "command "+truncate(c.Command, valueWidth), "ports   "+truncate(c.Ports, valueWidth))
 	}
+	// Keep long metadata and metrics from wrapping into neighboring panes.
+	fitted := make([]string, min(len(lines), max(0, height)))
+	for i := range fitted {
+		fitted[i] = ansi.Truncate(lines[i], max(1, width-4), "")
+	}
+	lines = fitted
 	return m.renderPane(lines, width, height, false)
 }
 

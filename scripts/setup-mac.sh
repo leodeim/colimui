@@ -1,5 +1,5 @@
 #!/bin/bash
-# Install the Docker/Colima stack on a new Mac. Safe to rerun.
+# Install colimui and the Docker/Colima stack on a new Mac. Safe to rerun.
 set -euo pipefail
 
 if [[ "$(uname -s)" != Darwin ]]; then
@@ -16,6 +16,8 @@ if [[ "$#" -ne 0 ]]; then
 fi
 
 trap 'echo "Setup stopped at line $LINENO. Fix the error above, then rerun this script." >&2' ERR
+setup_tmp="$(mktemp -d)"
+trap 'rm -rf "$setup_tmp"' EXIT
 
 # Homebrew may already be installed but absent from this shell's PATH.
 if command -v brew >/dev/null 2>&1; then
@@ -26,8 +28,7 @@ elif [[ -x /usr/local/bin/brew ]]; then
   brew_bin=/usr/local/bin/brew
 else
   echo "Installing Homebrew (may ask for your Mac password and Command Line Tools)…"
-  installer="$(mktemp -t colimui-homebrew)"
-  trap 'rm -f "$installer"' EXIT
+  installer="$setup_tmp/homebrew-install.sh"
   curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh -o "$installer"
   /bin/bash "$installer"
   if [[ -x /opt/homebrew/bin/brew ]]; then
@@ -82,10 +83,18 @@ colima start --runtime docker
 docker context use colima
 docker --context colima info --format 'Docker server: {{.ServerVersion}}'
 
+echo "Installing the latest colimui release…"
+curl -fsSL https://raw.githubusercontent.com/leodeim/colimui/main/scripts/install.sh -o "$setup_tmp/install-colimui.sh"
+# Homebrew's bin directory is already configured in the user's PATH above.
+# Reuse the release installer's platform selection and checksum verification.
+colimui_install_dir="${INSTALL_DIR:-$(brew --prefix)/bin}"
+INSTALL_DIR="$colimui_install_dir" /bin/sh "$setup_tmp/install-colimui.sh"
+
 if [[ -n "${DOCKER_HOST:-}" || -n "${DOCKER_CONTEXT:-}" ]]; then
   echo "Your shell sets DOCKER_HOST or DOCKER_CONTEXT; these can override the selected context."
   echo "To use the default Colima context, remove those overrides from your shell configuration."
 fi
 
-echo "Setup complete. Open a new terminal, then start your repo normally."
+echo "Setup complete. Open a new terminal, then run: colimui"
+echo "colimui installed in: $colimui_install_dir"
 echo "After restarting your Mac, run: colima start"
