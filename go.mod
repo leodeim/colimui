@@ -1,4 +1,4 @@
-module github.com/colimui/colimui
+module github.com/leodeim/colimui
 
 go 1.26
 
