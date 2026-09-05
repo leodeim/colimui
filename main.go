@@ -15,6 +15,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -375,7 +377,7 @@ func (m model) View() string {
 		return ""
 	}
 	p := m.currentProfile()
-	header := titleStyle.Render("colimui") + "  " + mutedStyle.Render("profile "+m.currentProfileName())
+	header := titleStyle.Render("colimui") + "  " + mutedStyle.Render("profile "+sanitizeText(m.currentProfileName()))
 	if p != nil {
 		indicator := "○"
 		if isRunning(p.Status) {
@@ -385,7 +387,7 @@ func (m model) View() string {
 		if isRunning(p.Status) {
 			profileStatus = runningStyle
 		}
-		header += "  " + profileStatus.Render(indicator+" "+strings.ToLower(p.Status))
+		header += "  " + profileStatus.Render(indicator+" "+strings.ToLower(sanitizeText(p.Status)))
 		header += "  " + mutedStyle.Render(fmt.Sprintf("%d cpu · %s ram · %s", p.CPUs, humanBytes(p.Memory), humanBytes(p.Disk)))
 	}
 
@@ -406,11 +408,11 @@ func (m model) View() string {
 	}
 	footer := mutedStyle.Render("focus: " + focusName + "  ↑↓/jk move  [] profile  s start  x stop  tab focus  enter expand/start/stop  t restart  d delete  l logs  f follow  home first  end latest  r refresh  q quit")
 	if m.confirmDelete {
-		footer = statusStyle.Render(m.status)
+		footer = statusStyle.Render(sanitizeText(m.status))
 	} else if m.err != nil {
-		footer = errorStyle.Render(m.status + ": " + m.err.Error())
+		footer = errorStyle.Render(sanitizeText(m.status) + ": " + sanitizeText(m.err.Error()))
 	} else if m.status != "ready" {
-		footer = statusStyle.Render(m.status)
+		footer = statusStyle.Render(sanitizeText(m.status))
 	}
 	return header + "\n" + panes + "\n" + footer
 }
@@ -489,7 +491,7 @@ func (m model) renderDetails(height, width int) string {
 	lines := []string{"details"}
 	if c == nil {
 		if group := m.selectedGroup(); group != nil {
-			lines = append(lines, "", titleStyle.Render(group.Name), "", "services "+strconv.Itoa(len(group.Indices)), "status   "+groupSummary(*group, m.containers))
+			lines = append(lines, "", titleStyle.Render(sanitizeText(group.Name)), "", "services "+strconv.Itoa(len(group.Indices)), "status   "+groupSummary(*group, m.containers))
 		} else {
 			lines = append(lines, "", mutedStyle.Render("select a container"))
 		}
@@ -1034,7 +1036,7 @@ func humanBytes(value int64) string {
 }
 
 func truncate(value string, width int) string {
-	value = strings.ReplaceAll(value, "\n", " ")
+	value = sanitizeText(value)
 	if width < 4 || len(value) <= width {
 		return value
 	}
@@ -1042,7 +1044,7 @@ func truncate(value string, width int) string {
 }
 
 func middleTruncate(value string, width int) string {
-	value = strings.ReplaceAll(value, "\n", " ")
+	value = sanitizeText(value)
 	if width < 4 || len(value) <= width {
 		return value
 	}
@@ -1052,11 +1054,81 @@ func middleTruncate(value string, width int) string {
 }
 
 func statusLabel(value string, width int) string {
+	value = sanitizeText(value)
 	fields := strings.Fields(value)
 	if width >= 4 && len(fields) > 0 && len(fields[0]) <= width {
 		return fields[0]
 	}
 	return truncate(value, width)
+}
+
+func sanitizeText(value string) string {
+	var sanitized strings.Builder
+	sanitized.Grow(len(value))
+	for i := 0; i < len(value); {
+		switch value[i] {
+		case 0x1b:
+			i = skipEscapeSequence(value, i)
+		case 0x90, 0x98, 0x9d, 0x9e, 0x9f:
+			i = skipStringControl(value, i+1)
+		case 0x9b:
+			i = skipCSI(value, i+1)
+		case 0x9c:
+			i++
+		default:
+			r, size := utf8.DecodeRuneInString(value[i:])
+			if unicode.IsControl(r) {
+				sanitized.WriteByte(' ')
+			} else {
+				sanitized.WriteRune(r)
+			}
+			i += size
+		}
+	}
+	return sanitized.String()
+}
+
+func skipEscapeSequence(value string, start int) int {
+	i := start + 1
+	if i >= len(value) {
+		return i
+	}
+	switch value[i] {
+	case '[':
+		return skipCSI(value, i+1)
+	case ']', 'P', '^', '_', 'X':
+		return skipStringControl(value, i+1)
+	}
+	for i < len(value) && value[i] >= 0x20 && value[i] <= 0x2f {
+		i++
+	}
+	if i < len(value) && value[i] >= 0x30 && value[i] <= 0x7e {
+		return i + 1
+	}
+	return i
+}
+
+func skipCSI(value string, start int) int {
+	for i := start; i < len(value); i++ {
+		if value[i] >= 0x40 && value[i] <= 0x7e {
+			return i + 1
+		}
+	}
+	return len(value)
+}
+
+func skipStringControl(value string, start int) int {
+	for i := start; i < len(value); i++ {
+		switch value[i] {
+		case 0x07, 0x9c:
+			return i + 1
+		case 0x1b:
+			if i+1 < len(value) && value[i+1] == '\\' {
+				return i + 2
+			}
+		}
+	}
+	return len(value)
 }
 
 func max(a, b int) int {

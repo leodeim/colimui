@@ -196,6 +196,34 @@ func TestMiddleTruncatePreservesSuffix(t *testing.T) {
 	}
 }
 
+func TestSanitizeTextStripsTerminalControls(t *testing.T) {
+	input := "safe\x1b[31mred\x1b[2J \x1b]0;title\a\x1bPdata\x1b\\\x9b?25l next\x1b#8\nlast"
+	if got := sanitizeText(input); got != "safered  next last" {
+		t.Fatalf("sanitized text = %q", got)
+	}
+}
+
+func TestRenderSanitizesContainerTextAndLogs(t *testing.T) {
+	m := model{
+		containers: []container{{
+			ID:      "id",
+			Name:    "container\x1b]0;title\a",
+			Image:   "image\x1b[2J",
+			State:   "running",
+			Status:  "Up\x1b[?25l",
+			Command: "command\x1b#8",
+			Ports:   "ports\x9b?25l",
+		}},
+		logs: []string{"log\x1b]52;c;clipboard\a"},
+	}
+	if view := m.renderDetails(12, 80); strings.Contains(view, "\x1b]0;title") || strings.Contains(view, "\x1b[2J") {
+		t.Fatalf("unsanitized metadata in details: %q", view)
+	}
+	if view := m.renderLogs(8, 80); strings.Contains(view, "\x1b]52;c;clipboard") {
+		t.Fatalf("unsanitized log in logs pane: %q", view)
+	}
+}
+
 func TestReadAllLogReader(t *testing.T) {
 	cmd := exec.Command("sh", "-c", "printf partial")
 	reader, err := startLogReader(cmd, func() {})
