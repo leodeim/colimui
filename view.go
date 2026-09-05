@@ -183,10 +183,10 @@ func (m model) renderContainers(height, width int) string {
 				marker = "●"
 			}
 			containerStatus := statusLabel(c.Status, statusWidth)
-			isActing := m.activeActionContainerID == c.ID
+			action, isActing := m.activeContainerAction(c.ID)
 			if isActing {
 				marker = spinnerFrames[m.spinnerFrame]
-				containerStatus = actionProgressLabel(m.activeActionLabel)
+				containerStatus = actionProgressLabel(action.label)
 			}
 			name := middleTruncate(c.listName(), nameWidth)
 			plain := fmt.Sprintf("%s%s %-*s %s", indent, marker, nameWidth, name, containerStatus)

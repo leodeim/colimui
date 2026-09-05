@@ -58,7 +58,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else if items := m.listItems(); m.containerIndex >= len(items) {
 			m.containerIndex = len(items) - 1
 		}
-		if m.activeActionID != 0 {
+		if m.hasActiveActions() {
 			// Keep the in-progress action visible while background refreshes run.
 		} else if m.err != nil {
 			m.status = "connection error"
@@ -82,21 +82,21 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 	case actionMsg:
-		if msg.requestID == 0 || msg.requestID != m.activeActionID {
+		action, ok := m.activeActions[msg.requestID]
+		if !ok {
 			return m, nil
 		}
-		m.activeActionID = 0
-		m.activeActionContainerID, m.activeActionLabel = "", ""
+		delete(m.activeActions, msg.requestID)
 		if msg.err != nil {
-			m.err, m.status = msg.err, msg.label+" failed"
+			m.err, m.status = msg.err, action.label+" failed"
 		} else {
-			m.err, m.status = nil, msg.label+" complete"
+			m.err, m.status = nil, action.label+" complete"
 		}
 		return m, m.queueRefresh(m.currentProfileName())
 	case tickMsg:
 		return m, tea.Batch(m.queueRefresh(m.currentProfileName()), m.nextTick())
 	case spinnerTickMsg:
-		if m.activeActionID == 0 {
+		if !m.hasActiveActions() {
 			return m, nil
 		}
 		m.spinnerFrame = (m.spinnerFrame + 1) % len(spinnerFrames)
@@ -166,16 +166,6 @@ func (m model) mouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 
 func (m model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
-	if m.activeActionID != 0 {
-		if key == "q" || key == "ctrl+c" {
-			m.stopLogs()
-			return m, tea.Quit
-		}
-		if isSafeWhileAction(key) {
-			return m.keyWhileAction(msg)
-		}
-		return m, nil
-	}
 	if m.actionMenu {
 		return m.actionMenuKey(msg)
 	}
@@ -229,20 +219,24 @@ func (m model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.status = "refreshing"
 		return m, m.queueRefresh(m.currentProfileName())
 	case "s":
-		if p := m.currentProfile(); p == nil || !isRunning(p.Status) {
+		if p := m.currentProfile(); !m.hasActiveProfileAction() && (p == nil || !isRunning(p.Status)) {
 			name := m.currentProfileName()
 			m.status = "starting " + name
 			command := m.actionCmd(name, "start", "colima", "start", "--profile", name)
 			return m, tea.Batch(command, spinnerTick())
 		}
 	case "x":
-		if p := m.currentProfile(); p != nil && isRunning(p.Status) {
+		if p := m.currentProfile(); !m.hasActiveProfileAction() && p != nil && isRunning(p.Status) {
 			m.status = "stopping " + p.Name
 			command := m.actionCmd(p.Name, "stop", "colima", "stop", "--profile", p.Name)
 			return m, tea.Batch(command, spinnerTick())
 		}
 	case "t":
 		if c := m.selectedContainer(); c != nil {
+			if action, active := m.activeContainerAction(c.ID); active {
+				m.status = actionProgressLabel(action.label) + " " + c.Name
+				return m, nil
+			}
 			m.status = "restarting " + c.Name
 			command := m.actionCmd(m.currentProfileName(), "restart", "docker", "restart", c.ID)
 			return m, tea.Batch(command, spinnerTick())
@@ -251,6 +245,10 @@ func (m model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if item := m.selectedItem(); item != nil && item.groupHeader {
 			m.toggleSelectedGroup()
 		} else if c := m.selectedContainer(); c != nil {
+			if action, active := m.activeContainerAction(c.ID); active {
+				m.status = actionProgressLabel(action.label) + " " + c.Name
+				return m, nil
+			}
 			verb := "stop"
 			if c.State != "running" {
 				verb = "start"
@@ -261,6 +259,10 @@ func (m model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "d":
 		if c := m.selectedContainer(); c != nil {
+			if action, active := m.activeContainerAction(c.ID); active {
+				m.status = actionProgressLabel(action.label) + " " + c.Name
+				return m, nil
+			}
 			if c.State == "running" {
 				m.status = "stop the container before deleting it"
 			} else {
@@ -283,23 +285,6 @@ func (m model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func isSafeWhileAction(key string) bool {
-	switch key {
-	case "up", "k", "down", "j", "tab", "left", "right", "pgup", "pgdown", "end":
-		return true
-	}
-	return false
-}
-
-func (m model) keyWhileAction(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	actionID := m.activeActionID
-	m.activeActionID = 0
-	updated, command := m.key(msg)
-	next := updated.(model)
-	next.activeActionID = actionID
-	return next, command
-}
-
 func (m model) actionMenuItems() []actionMenuItem {
 	profile := m.currentProfile()
 	profileLabel, profileShortcut := "start colima", "s"
@@ -308,6 +293,10 @@ func (m model) actionMenuItems() []actionMenuItem {
 	}
 
 	container := m.selectedContainer()
+	containerBusy := false
+	if container != nil {
+		_, containerBusy = m.activeContainerAction(container.ID)
+	}
 	containerName := "selected container"
 	if container != nil {
 		containerName = container.listName()
@@ -326,10 +315,10 @@ func (m model) actionMenuItems() []actionMenuItem {
 	}
 
 	return []actionMenuItem{
-		{label: profileLabel, shortcut: profileShortcut, enabled: true},
-		{label: containerLabel, shortcut: "enter", enabled: container != nil},
-		{label: "restart " + containerName, shortcut: "t", enabled: container != nil},
-		{label: "delete " + containerName, shortcut: "d", enabled: container != nil && container.State != "running"},
+		{label: profileLabel, shortcut: profileShortcut, enabled: !m.hasActiveProfileAction()},
+		{label: containerLabel, shortcut: "enter", enabled: container != nil && !containerBusy},
+		{label: "restart " + containerName, shortcut: "t", enabled: container != nil && !containerBusy},
+		{label: "delete " + containerName, shortcut: "d", enabled: container != nil && !containerBusy && container.State != "running"},
 		{label: "reload logs for " + containerName, shortcut: "l", enabled: container != nil},
 		{label: followLabel, shortcut: "f", enabled: container != nil},
 		{label: "load all logs for " + containerName, shortcut: "home", enabled: container != nil},
@@ -429,14 +418,39 @@ func spinnerTick() tea.Cmd {
 	return tea.Tick(spinnerInterval, func(t time.Time) tea.Msg { return spinnerTickMsg(t) })
 }
 
+func (m model) hasActiveActions() bool {
+	return len(m.activeActions) > 0
+}
+
+func (m model) activeContainerAction(id string) (activeAction, bool) {
+	for _, action := range m.activeActions {
+		if action.containerID == id {
+			return action, true
+		}
+	}
+	return activeAction{}, false
+}
+
+func (m model) hasActiveProfileAction() bool {
+	for _, action := range m.activeActions {
+		if action.containerID == "" {
+			return true
+		}
+	}
+	return false
+}
+
 func (m *model) actionCmd(profileName, label, command string, args ...string) tea.Cmd {
 	m.nextActionID++
-	m.activeActionID = m.nextActionID
-	m.activeActionContainerID, m.activeActionLabel = "", label
+	requestID := m.nextActionID
+	action := activeAction{label: label}
 	if command == "docker" && len(args) > 1 {
-		m.activeActionContainerID = args[len(args)-1]
+		action.containerID = args[len(args)-1]
 	}
-	requestID := m.activeActionID
+	if m.activeActions == nil {
+		m.activeActions = make(map[uint64]activeAction)
+	}
+	m.activeActions[requestID] = action
 	backend := m.currentBackend()
 	return func() tea.Msg {
 		return actionMsg{requestID: requestID, label: label, err: backend.Action(profileName, command, args...)}

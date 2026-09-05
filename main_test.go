@@ -93,43 +93,51 @@ func TestDeleteConfirmationDispatchesOneAction(t *testing.T) {
 	m.confirmDelete = true
 	updated, cmd := m.key(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
 	got := updated.(model)
-	if cmd == nil || got.confirmDelete || got.activeActionID == 0 {
-		t.Fatalf("delete state = confirm %t active %d command %v", got.confirmDelete, got.activeActionID, cmd != nil)
+	if cmd == nil || got.confirmDelete || len(got.activeActions) != 1 {
+		t.Fatalf("delete state = confirm %t active %d command %v", got.confirmDelete, len(got.activeActions), cmd != nil)
+	}
+	var requestID uint64
+	for requestID = range got.activeActions {
 	}
 	updated, duplicate := got.key(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
-	if duplicate != nil || updated.(model).activeActionID != got.activeActionID {
+	if duplicate != nil || len(updated.(model).activeActions) != 1 {
 		t.Fatal("duplicate delete confirmation started another action")
 	}
-	if msg := cmd().(actionMsg); msg.requestID != got.activeActionID || backend.actionCalls != 1 {
+	if msg := cmd().(actionMsg); msg.requestID != requestID || backend.actionCalls != 1 {
 		t.Fatalf("delete message = %#v calls %d", msg, backend.actionCalls)
 	}
 }
 
 func TestActionIgnoresStaleCompletion(t *testing.T) {
 	m := newModel(&fakeBackend{}, func() tea.Cmd { return nil })
-	m.activeActionID = 2
+	m.activeActions = map[uint64]activeAction{2: {label: "start"}}
 	m.status = "starting default"
 	updated, cmd := m.Update(actionMsg{requestID: 1, label: "stop"})
 	got := updated.(model)
-	if cmd != nil || got.activeActionID != 2 || got.status != "starting default" {
+	if cmd != nil || len(got.activeActions) != 1 || got.status != "starting default" {
 		t.Fatalf("stale action changed state: %#v", got)
 	}
 	updated, cmd = got.Update(actionMsg{requestID: 2, label: "start"})
 	got = updated.(model)
-	if cmd == nil || got.activeActionID != 0 || got.status != "start complete" {
+	if cmd == nil || len(got.activeActions) != 0 || got.status != "start complete" {
 		t.Fatalf("active action completion = %#v", got)
 	}
 }
 
 func TestActiveActionAllowsNavigationAndKeepsStatus(t *testing.T) {
 	m := newModel(&fakeBackend{}, func() tea.Cmd { return nil })
-	m.activeActionID = 1
+	m.activeActions = map[uint64]activeAction{1: {containerID: "one", label: "stop"}}
+	m.nextActionID = 1
 	m.status = "stopping api"
 	m.containers = []container{{ID: "one", Name: "api", State: "running"}, {ID: "two", Name: "worker", State: "running"}}
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyDown})
 	got := updated.(model)
-	if got.containerIndex != 1 || got.activeActionID != 1 {
-		t.Fatalf("navigation during action = index %d active %d", got.containerIndex, got.activeActionID)
+	if got.containerIndex != 1 || len(got.activeActions) != 1 {
+		t.Fatalf("navigation during action = index %d active %d", got.containerIndex, len(got.activeActions))
+	}
+	updated, command := got.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if command == nil || len(updated.(model).activeActions) != 2 {
+		t.Fatalf("second container action = active %d command %t", len(updated.(model).activeActions), command != nil)
 	}
 	updated, _ = got.Update(refreshMsg{profiles: []profile{{Name: "default", Status: "Running"}}, containers: got.containers})
 	if got := updated.(model); got.status != "stopping api" {
@@ -139,13 +147,11 @@ func TestActiveActionAllowsNavigationAndKeepsStatus(t *testing.T) {
 
 func TestActiveContainerShowsProgress(t *testing.T) {
 	m := model{
-		width:                   100,
-		height:                  24,
-		status:                  "stopping api",
-		containers:              []container{{ID: "api-id", Name: "api", State: "running", Status: "Up"}},
-		activeActionID:          1,
-		activeActionContainerID: "api-id",
-		activeActionLabel:       "stop",
+		width:         100,
+		height:        24,
+		status:        "stopping api",
+		containers:    []container{{ID: "api-id", Name: "api", State: "running", Status: "Up"}},
+		activeActions: map[uint64]activeAction{1: {containerID: "api-id", label: "stop"}},
 	}
 	if view := m.View(); !strings.Contains(view, "stopping…") || !strings.Contains(view, spinnerFrames[0]) {
 		t.Fatalf("active container progress missing: %q", view)
