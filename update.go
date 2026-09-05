@@ -179,14 +179,17 @@ func (m model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	if m.confirmDelete {
 		switch key {
-		case "y", "enter":
-			if c := m.deleteTarget(); c != nil && c.State != "running" {
-				m.confirmDelete = false
-				m.deleteProfile, m.deleteID = "", ""
-				m.status = "deleting " + c.Name
-				return m, m.actionCmd(m.currentProfileName(), "delete", "docker", "rm", c.ID)
+		case "y":
+			return m.dispatchDelete()
+		case "enter":
+			if m.deleteChoice == 1 {
+				return m.dispatchDelete()
 			}
-			m.cancelDeleteConfirmation("delete canceled: container changed")
+			m.cancelDeleteConfirmation("ready")
+		case "up", "k":
+			m.deleteChoice = 0
+		case "down", "j":
+			m.deleteChoice = 1
 		case "n", "esc", "q":
 			m.cancelDeleteConfirmation("ready")
 		}
@@ -278,6 +281,7 @@ func (m model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			} else {
 				m.confirmDelete = true
 				m.deleteProfile, m.deleteID = m.currentProfileName(), c.ID
+				m.deleteChoice = 0
 				m.status = "delete " + c.Name + "? y/n"
 			}
 		}
@@ -293,6 +297,17 @@ func (m model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "pgup", "pgdown", "end":
 		m.scrollLogs(key)
 	}
+	return m, nil
+}
+
+func (m model) dispatchDelete() (tea.Model, tea.Cmd) {
+	if c := m.deleteTarget(); c != nil && c.State != "running" {
+		m.confirmDelete = false
+		m.deleteProfile, m.deleteID, m.deleteChoice = "", "", 0
+		m.status = "deleting " + c.Name
+		return m, m.actionCmd(m.currentProfileName(), "delete", "docker", "rm", c.ID)
+	}
+	m.cancelDeleteConfirmation("delete canceled: container changed")
 	return m, nil
 }
 
@@ -399,7 +414,7 @@ func (m model) deleteTarget() *container {
 
 func (m *model) cancelDeleteConfirmation(status string) {
 	m.confirmDelete = false
-	m.deleteProfile, m.deleteID = "", ""
+	m.deleteProfile, m.deleteID, m.deleteChoice = "", "", 0
 	m.status = status
 }
 

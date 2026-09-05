@@ -127,6 +127,23 @@ func TestDeleteConfirmationStaysWithOriginalContainer(t *testing.T) {
 	}
 }
 
+func TestDeleteConfirmationModalSelectsDelete(t *testing.T) {
+	m := newModel(&fakeBackend{}, func() tea.Cmd { return nil })
+	m.width, m.height = 100, 24
+	m.profiles = []profile{{Name: "default", Status: "Running"}}
+	m.containers = []container{{ID: "one", Name: "one", State: "exited"}}
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	updated, _ = updated.(model).Update(tea.KeyMsg{Type: tea.KeyDown})
+	got := updated.(model)
+	if got.deleteChoice != 1 || !strings.Contains(got.View(), "delete container?") {
+		t.Fatalf("delete modal choice = %d", got.deleteChoice)
+	}
+	updated, command := got.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if command == nil || updated.(model).confirmDelete {
+		t.Fatal("delete choice did not dispatch")
+	}
+}
+
 func TestCtrlCQuitsFromModals(t *testing.T) {
 	for _, modal := range []model{{actionMenu: true}, {confirmDelete: true}} {
 		_, command := modal.key(tea.KeyMsg{Type: tea.KeyCtrlC})

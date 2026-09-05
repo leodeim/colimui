@@ -39,10 +39,31 @@ func (m model) View() string {
 		return truncate("terminal too small — resize to 60×16", m.width)
 	}
 	dashboard := m.renderDashboard()
+	if m.confirmDelete {
+		return overlay(m.width, m.height, dashboard, m.renderDeleteConfirmation())
+	}
 	if m.actionMenu {
 		return overlay(m.width, m.height, dashboard, m.renderActionMenu())
 	}
 	return dashboard
+}
+
+func (m model) renderDeleteConfirmation() string {
+	name := "this container"
+	if target := m.deleteTarget(); target != nil {
+		name = target.Name
+	}
+	lines := []string{titleStyle.Render("delete container?"), "", "Remove " + sanitizeText(name) + "?", mutedStyle.Render("This cannot be undone."), ""}
+	for index, option := range []string{"cancel", "delete"} {
+		line := "  " + option
+		if index == m.deleteChoice {
+			line = selectedRowStyle.Render("> " + option)
+		}
+		lines = append(lines, line)
+	}
+	lines = append(lines, "", mutedStyle.Render("↑↓/j k select  enter confirm  y/n quick choice  esc cancel"))
+	width := min(52, max(34, m.width-4))
+	return lipgloss.NewStyle().Width(width).Padding(1, 2).Border(lipgloss.RoundedBorder()).BorderForeground(red).Background(lipgloss.Color("#1E293B")).Render(strings.Join(lines, "\n"))
 }
 
 func (m model) renderDashboard() string {

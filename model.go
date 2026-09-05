@@ -90,6 +90,7 @@ type model struct {
 	confirmDelete    bool
 	deleteProfile    string
 	deleteID         string
+	deleteChoice     int
 	logs             []string
 	logPartial       string
 	logBytes         int
