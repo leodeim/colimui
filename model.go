@@ -92,6 +92,7 @@ type model struct {
 	logSearchEditing bool
 	logSearchBefore  string
 	logTimestamps    bool
+	logWrap          bool
 	searchQuery      string
 	searchEditing    bool
 	searchBefore     string

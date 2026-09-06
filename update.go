@@ -285,6 +285,8 @@ func (m model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.pauseLogs()
 	case "T":
 		m.logTimestamps = !m.logTimestamps
+	case "w":
+		m.logWrap = !m.logWrap
 	case "/":
 		m.searchEditing, m.searchBefore = true, m.searchQuery
 		m.focus = 0
@@ -454,6 +456,7 @@ func (m model) actionMenuItems() []actionMenuItem {
 		{label: "load all logs for " + containerName, shortcut: "home", enabled: container != nil},
 		{label: "search log text", shortcut: "L", enabled: container != nil},
 		{label: "toggle log timestamps", shortcut: "T", enabled: true},
+		{label: map[bool]string{false: "wrap long log lines", true: "trim long log lines"}[m.logWrap], shortcut: "w", enabled: true},
 		{label: "clean up reclaimable docker storage", shortcut: "c", enabled: !m.cleanupRunning},
 		{label: "docker usage overview", shortcut: "u", enabled: true},
 		{label: "refresh", shortcut: "r", enabled: true},

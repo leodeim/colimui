@@ -50,12 +50,10 @@ go install github.com/leodeim/colimui@latest
 | `?` | Open or close the Actions menu |
 | `u` | Open/close Docker usage overview: total CPU, RAM, and storage |
 | `c` | Open cleanup confirmation for reclaimable Docker storage |
-| `↑` / `↓` or `k` / `j` | Select a container or menu item |
 | `Tab`, `←`, `→` | Switch focus between containers and logs |
-| `Enter` | Start/stop the selected container, expand/collapse a Compose group, or run the selected menu action |
+| `Enter` | Start/stop the selected container |
 | `/` | Search containers |
-| `R` (`Shift+R`) | Toggle running containers only |
-| `Esc` | Clear filters; while searching, cancel editing; in a menu, close it |
+| `R` | Toggle running containers only |
 | `r` | Refresh profiles and containers |
 | `[` / `]` | Switch to the previous/next Colima profile |
 | `s` / `x` | Start/stop the current Colima profile |
@@ -64,13 +62,13 @@ go install github.com/leodeim/colimui@latest
 | `y` / `n` | Confirm/cancel deletion |
 | `l` | Reload the selected container's logs |
 | `f` | Pause streaming without clearing logs, or resume from the latest 200 lines |
-| `L` (`Shift+L`) | Search retained log text (pauses streaming) |
-| `T` (`Shift+T`) | Show/hide Docker timestamps |
+| `L` | Search retained log text (pauses streaming) |
+| `T` | Show/hide Docker timestamps |
+| `w` | Wrap/trim long log lines |
 | `Home` | Load log history from the start, subject to retention limits |
-| `Page Up` / `Page Down` | Scroll logs |
+| `Page Up` / `Down` | Scroll logs |
 | `End` | Jump to the latest logs |
 | `q` | Quit, or close the current menu |
-| `Ctrl+C` | Quit from any mode |
 
 ## New macOS setup script
 

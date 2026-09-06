@@ -323,7 +323,8 @@ func (m model) renderLogs(height, width int) string {
 	if m.focus == 1 {
 		heading = selectedStyle.Render("▸ " + heading)
 	}
-	lines := []string{heading + "  " + map[bool]string{true: "following · f pause", false: "paused · f resume"}[m.follow]}
+	wrapLabel := map[bool]string{true: "w trim", false: "w wrap"}[m.logWrap]
+	lines := []string{heading + "  " + map[bool]string{true: "following · f pause", false: "paused · f resume"}[m.follow] + " · " + wrapLabel}
 	if m.logQuery != "" {
 		lines = append(lines, mutedStyle.Render(truncate(fmt.Sprintf("/%s · %d matches", m.logQuery, len(m.filteredLogs())), width-4)))
 	}
@@ -338,9 +339,7 @@ func (m model) renderLogs(height, width int) string {
 		if len(m.filteredLogs()) == 0 {
 			lines = append(lines, mutedStyle.Render("no matching logs"))
 		}
-		for _, line := range m.visibleLogs(max(0, height-len(lines)-1)) {
-			lines = append(lines, ansi.Truncate(m.logText(line), max(1, width-4), ""))
-		}
+		lines = append(lines, m.logRows(max(0, height-len(lines)-1), max(1, width-4))...)
 	}
 	// Lipgloss sets a minimum height; it does not clip wrapped text. Constrain
 	// every row and the row count so long container logs cannot expand the pane.
@@ -350,6 +349,27 @@ func (m model) renderLogs(height, width int) string {
 	}
 	lines = fitted
 	return m.renderPane(lines, width, height, m.focus == 1)
+}
+
+// logRows turns logical log entries into bounded terminal rows. Wrapping here,
+// rather than relying on the terminal, keeps the pane height stable.
+func (m model) logRows(count, width int) []string {
+	if count <= 0 {
+		return nil
+	}
+	var rows []string
+	for _, line := range m.visibleLogs(count) {
+		text := m.logText(line)
+		if m.logWrap {
+			rows = append(rows, strings.Split(ansi.HardwrapWc(text, width, true), "\n")...)
+		} else {
+			rows = append(rows, ansi.Truncate(text, width, ""))
+		}
+	}
+	if len(rows) > count {
+		rows = rows[len(rows)-count:]
+	}
+	return rows
 }
 
 func (m model) renderPane(lines []string, width, height int, focused bool) string {

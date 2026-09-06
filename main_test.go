@@ -407,6 +407,45 @@ func TestLogsPaneClipsLongRowsToItsAllocatedSize(t *testing.T) {
 	}
 }
 
+func TestLogWrappingUsesBoundedTerminalRows(t *testing.T) {
+	longLine := "postgres 数据库 startup " + strings.Repeat("connection-ready ", 8)
+	m := model{
+		containers: []container{{ID: "postgres", Name: "postgres", State: "running"}},
+		logs:       []string{longLine},
+		logWrap:    true,
+	}
+	rows := m.logRows(6, 20)
+	if len(rows) < 2 || len(rows) > 6 {
+		t.Fatalf("wrapped rows = %#v", rows)
+	}
+	for _, row := range rows {
+		if lipgloss.Width(row) > 20 {
+			t.Fatalf("wrapped row width = %d: %q", lipgloss.Width(row), row)
+		}
+	}
+	if got := lipgloss.Height(m.renderLogs(10, 80)); got != 12 {
+		t.Fatalf("wrapped log pane height = %d, want 12", got)
+	}
+
+	m.logWrap = false
+	rows = m.logRows(6, 20)
+	if len(rows) != 1 || lipgloss.Width(rows[0]) > 20 || rows[0] == longLine {
+		t.Fatalf("trimmed rows = %#v", rows)
+	}
+}
+
+func TestWKeyTogglesLogWrapping(t *testing.T) {
+	m := model{}
+	updated, command := m.key(shortcutKey("w"))
+	if command != nil || !updated.(model).logWrap {
+		t.Fatal("w did not enable log wrapping")
+	}
+	updated, _ = updated.(model).key(shortcutKey("w"))
+	if updated.(model).logWrap {
+		t.Fatal("w did not disable log wrapping")
+	}
+}
+
 func TestSelectingAComposeGroupPausesLogs(t *testing.T) {
 	m := model{
 		follow:     true,
