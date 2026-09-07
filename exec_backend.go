@@ -57,6 +57,12 @@ func (execBackend) OpenLogs(profileName, id string, req logRequest) (*logReader,
 	return reader, nil
 }
 
+func (execBackend) Shell(profileName, id string) *exec.Cmd {
+	cmd := exec.Command("docker", "exec", "-it", id, "sh", "-c", "command -v bash >/dev/null 2>&1 && exec bash || exec sh")
+	cmd.Env = append(os.Environ(), "DOCKER_CONTEXT="+dockerContext(profileName))
+	return cmd
+}
+
 func listProfiles() ([]profile, error) {
 	output, err := exec.Command("colima", "list", "--json").Output()
 	if err != nil {

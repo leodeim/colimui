@@ -26,6 +26,8 @@ type fakeBackend struct {
 	logFromStart      bool
 	logSince          string
 	logsErr           error
+	shellProfileName  string
+	shellID           string
 }
 
 func (b *fakeBackend) Profiles() ([]profile, error) {
@@ -49,6 +51,11 @@ func (b *fakeBackend) OpenLogs(profileName, id string, req logRequest) (*logRead
 	b.logProfileName, b.logID = profileName, id
 	b.logFollow, b.logFromStart, b.logSince = req.follow, req.fromStart, req.since
 	return nil, b.logsErr
+}
+
+func (b *fakeBackend) Shell(profileName, id string) *exec.Cmd {
+	b.shellProfileName, b.shellID = profileName, id
+	return exec.Command("true")
 }
 
 func TestDockerContext(t *testing.T) {

@@ -58,6 +58,10 @@ type tickMsg time.Time
 
 type logRetryMsg struct{}
 
+type execDoneMsg struct {
+	err error
+}
+
 type spinnerTickMsg time.Time
 
 type logsMsg struct {

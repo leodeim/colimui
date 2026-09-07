@@ -1,6 +1,9 @@
 package main
 
-import "strings"
+import (
+	"os/exec"
+	"strings"
+)
 
 // logRequest selects how much history a log stream starts with: fromStart
 // loads everything, since resumes after a timestamp, otherwise a short tail.
@@ -15,6 +18,7 @@ type Backend interface {
 	Containers(profileName string) ([]container, error)
 	Action(profileName, command string, args ...string) error
 	OpenLogs(profileName, id string, req logRequest) (*logReader, error)
+	Shell(profileName, id string) *exec.Cmd
 }
 
 func dockerContext(profileName string) string {

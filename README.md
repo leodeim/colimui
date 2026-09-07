@@ -58,6 +58,7 @@ go install github.com/leodeim/colimui@latest
 | `[` / `]` | Switch to the previous/next Colima profile |
 | `s` / `x` | Start/stop the current Colima profile |
 | `t` | Restart the selected container |
+| `e` | Open an interactive shell in the selected container |
 | `d` | Open deletion confirmation for a stopped container |
 | `y` / `n` | Confirm/cancel deletion |
 | `y` | Copy the selected container's details to the clipboard |

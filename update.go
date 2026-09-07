@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -180,6 +181,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		return m, m.readLogsCmd()
+	case execDoneMsg:
+		m.err, m.status = nil, "ready"
+		if msg.err != nil && shellFailed(msg.err) {
+			m.err, m.status = msg.err, "shell failed"
+		}
+		return m, m.queueRefresh(m.currentProfileName())
 	case logRetryMsg:
 		if !m.follow || m.reader != nil {
 			return m, nil
@@ -335,6 +342,20 @@ func (m model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			command := m.actionCmd(p.Name, "stop", "colima", "stop", "--profile", p.Name)
 			return m, tea.Batch(command, spinnerTick())
 		}
+	case "e":
+		if c := m.selectedContainer(); c != nil {
+			if action, active := m.activeContainerAction(c.ID); active {
+				m.status = actionProgressLabel(action.label) + " " + c.Name
+				return m, nil
+			}
+			if !isRunning(c.State) {
+				m.status = "start the container before opening a shell"
+				return m, nil
+			}
+			m.status = "shell: " + c.listName()
+			shell := m.currentBackend().Shell(m.currentProfileName(), c.ID)
+			return m, tea.ExecProcess(shell, func(err error) tea.Msg { return execDoneMsg{err: err} })
+		}
 	case "t":
 		if c := m.selectedContainer(); c != nil {
 			if action, active := m.activeContainerAction(c.ID); active {
@@ -444,6 +465,7 @@ func (m model) actionMenuItems() []actionMenuItem {
 		{label: profileLabel, shortcut: profileShortcut, enabled: !m.hasActiveProfileAction()},
 		{label: containerLabel, shortcut: "enter", enabled: container != nil && !containerBusy},
 		{label: "restart " + containerName, shortcut: "t", enabled: container != nil && !containerBusy},
+		{label: "open shell in " + containerName, shortcut: "e", enabled: container != nil && !containerBusy && container.State == "running"},
 		{label: "delete " + containerName, shortcut: "d", enabled: container != nil && !containerBusy && container.State != "running"},
 		{label: "reload logs for " + containerName, shortcut: "l", enabled: container != nil},
 		{label: followLabel, shortcut: "f", enabled: container != nil},
@@ -582,6 +604,17 @@ func spinnerTick() tea.Cmd {
 
 func logRetryTick() tea.Cmd {
 	return tea.Tick(logRetryInterval, func(time.Time) tea.Msg { return logRetryMsg{} })
+}
+
+// shellFailed separates real exec failures from the user's own shell exit
+// status: 126/127 mean no shell could be started inside the container.
+func shellFailed(err error) bool {
+	var exit *exec.ExitError
+	if errors.As(err, &exit) {
+		code := exit.ExitCode()
+		return code == 126 || code == 127
+	}
+	return true
 }
 
 func (m model) hasActiveActions() bool {
