@@ -11,8 +11,9 @@ import (
 )
 
 const (
-	refreshInterval = 3 * time.Second
-	spinnerInterval = 120 * time.Millisecond
+	refreshInterval  = 3 * time.Second
+	spinnerInterval  = 120 * time.Millisecond
+	logRetryInterval = time.Second
 )
 
 func (m model) Init() tea.Cmd {
@@ -110,10 +111,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if oldID != m.selectedID() {
 			m.stopLogs()
 			m.logs, m.logPartial, m.logScroll, m.logFromStart, m.logBytes, m.logsTruncated, m.partialTrimmed = nil, "", 0, false, 0, false, false
-			m.follow = false
+			m.clearLogSelection()
 			if m.selectedID() != "" {
 				var err error
-				m.reader, err = m.currentBackend().OpenLogs(m.currentProfileName(), m.selectedID(), m.follow, false)
+				m.reader, err = m.currentBackend().OpenLogs(m.currentProfileName(), m.selectedID(), logRequest{follow: m.follow})
 				if err != nil {
 					m.err, m.status = err, "logs failed"
 					return m, nil
@@ -154,7 +155,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.err, m.status = msg.err, "logs failed"
 		}
 		if msg.done {
-			m.follow = false
+			m.reader = nil
 			partial := strings.TrimSpace(m.logPartial)
 			m.finishLogs()
 			if msg.err != nil && partial == "" && len(m.logs) > 0 {
@@ -165,46 +166,33 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			if msg.err != nil && !errors.Is(msg.err, io.EOF) {
 				m.err, m.status = msg.err, "logs failed"
+				m.follow = false
 			}
 			if m.logFromStart {
 				m.logScroll = len(m.logs)
 				m.logFromStart = false
 			}
+			if m.follow {
+				// docker logs --follow exits when the container stops; keep
+				// following and reconnect so a restart resumes the stream.
+				return m, logRetryTick()
+			}
 			return m, nil
 		}
 		return m, m.readLogsCmd()
-	}
-	return m, nil
-}
-
-func (m model) mouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
-	if m.usageOverview {
-		return m, nil
-	}
-	event := tea.MouseEvent(msg)
-	if event.Action != tea.MouseActionPress || !event.IsWheel() {
-		return m, nil
-	}
-	leftWidth := min(38, max(26, m.width/3))
-	if event.X < leftWidth {
-		itemCount := len(m.listItems())
-		if event.Button == tea.MouseButtonWheelUp && m.containerIndex > 0 {
-			m.containerIndex--
-			return m, m.reloadSelectedLogs()
+	case logRetryMsg:
+		if !m.follow || m.reader != nil {
+			return m, nil
 		}
-		if event.Button == tea.MouseButtonWheelDown && m.containerIndex < itemCount-1 {
-			m.containerIndex++
-			return m, m.reloadSelectedLogs()
+		c := m.selectedContainer()
+		if c == nil {
+			// Follow stays armed; selecting a container opens its own stream.
+			return m, nil
 		}
-		return m, nil
-	}
-	m.focus = 1
-	m.pauseLogs()
-	switch event.Button {
-	case tea.MouseButtonWheelUp:
-		m.logScroll = min(len(m.filteredLogs()), m.logScroll+3)
-	case tea.MouseButtonWheelDown:
-		m.logScroll = max(0, m.logScroll-3)
+		if !isRunning(c.State) && !strings.EqualFold(c.State, "restarting") {
+			return m, logRetryTick()
+		}
+		return m, m.resumeFollowLogs()
 	}
 	return m, nil
 }
@@ -316,6 +304,8 @@ func (m model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.cancelDeleteConfirmation("ready")
 			m.stopLogs()
 			m.containers, m.logs, m.logPartial, m.logScroll, m.logFromStart, m.logBytes, m.logsTruncated, m.partialTrimmed = nil, nil, "", 0, false, 0, false, false
+			m.clearLogSelection()
+			m.follow = false
 			m.status = "switching to " + m.currentProfileName()
 			return m, m.queueRefresh(m.currentProfileName())
 		}
@@ -386,6 +376,10 @@ func (m model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.status = "delete " + c.Name + "? y/n"
 			}
 		}
+	case "y":
+		return m.copySelectedDetails()
+	case "Y":
+		return m.copyFilteredLogs()
 	case "l":
 		return m, m.reloadSelectedLogs()
 	case "f":
@@ -454,6 +448,8 @@ func (m model) actionMenuItems() []actionMenuItem {
 		{label: "reload logs for " + containerName, shortcut: "l", enabled: container != nil},
 		{label: followLabel, shortcut: "f", enabled: container != nil},
 		{label: "load all logs for " + containerName, shortcut: "home", enabled: container != nil},
+		{label: "copy details for " + containerName, shortcut: "y", enabled: container != nil},
+		{label: "copy logs to clipboard", shortcut: "Y", enabled: container != nil && len(m.logs) > 0},
 		{label: "search log text", shortcut: "L", enabled: container != nil},
 		{label: "toggle log timestamps", shortcut: "T", enabled: true},
 		{label: map[bool]string{false: "wrap long log lines", true: "trim long log lines"}[m.logWrap], shortcut: "w", enabled: true},
@@ -580,6 +576,10 @@ func defaultTick() tea.Cmd {
 
 func spinnerTick() tea.Cmd {
 	return tea.Tick(spinnerInterval, func(t time.Time) tea.Msg { return spinnerTickMsg(t) })
+}
+
+func logRetryTick() tea.Cmd {
+	return tea.Tick(logRetryInterval, func(time.Time) tea.Msg { return logRetryMsg{} })
 }
 
 func (m model) hasActiveActions() bool {

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 )
 
 const (
@@ -28,19 +29,54 @@ type logReader struct {
 }
 
 func (m model) visibleLogs(count int) []string {
-	m.logs = m.filteredLogs()
-	if count <= 0 || len(m.logs) == 0 {
-		return nil
+	start, end := m.visibleLogRange(count)
+	return m.filteredLogs()[start:end]
+}
+
+// visibleLogRange reports the window of filtered log indices shown for the
+// current scroll position.
+func (m model) visibleLogRange(count int) (int, int) {
+	filtered := m.filteredLogs()
+	if count <= 0 || len(filtered) == 0 {
+		return 0, 0
 	}
-	if m.logScroll >= len(m.logs) {
-		return m.logs[:min(count, len(m.logs))]
+	if m.logScroll >= len(filtered) {
+		return 0, min(count, len(filtered))
 	}
-	end := len(m.logs) - m.logScroll
-	if end < 0 {
-		end = 0
-	}
+	end := len(filtered) - m.logScroll
 	start := max(0, end-count)
-	return m.logs[start:end]
+	return start, end
+}
+
+// logRowsIndexed turns logical log entries into bounded terminal rows, with
+// the filtered log index behind each row. Wrapping here, rather than relying
+// on the terminal, keeps the pane height stable; the indices let the mouse
+// map rows back to lines.
+func (m model) logRowsIndexed(count, width int) ([]string, []int) {
+	if count <= 0 {
+		return nil, nil
+	}
+	start, end := m.visibleLogRange(count)
+	filtered := m.filteredLogs()
+	var rows []string
+	var indices []int
+	for i := start; i < end; i++ {
+		text := m.logText(filtered[i])
+		if m.logWrap {
+			for _, row := range strings.Split(ansi.HardwrapWc(text, width, true), "\n") {
+				rows = append(rows, row)
+				indices = append(indices, i)
+			}
+		} else {
+			rows = append(rows, ansi.Truncate(text, width, ""))
+			indices = append(indices, i)
+		}
+	}
+	if len(rows) > count {
+		rows = rows[len(rows)-count:]
+		indices = indices[len(indices)-count:]
+	}
+	return rows, indices
 }
 
 func (m *model) appendLogs(data string) {
@@ -85,7 +121,14 @@ func (m *model) appendLogLine(line string) {
 		m.logs[0] = ""
 		m.logs = m.logs[1:]
 		m.logsTruncated = true
+		// Trimming shifts line indices, so any selection no longer matches.
+		m.clearLogSelection()
 	}
+}
+
+func (m *model) clearLogSelection() {
+	m.logSelecting, m.logSelActive, m.logSelDragged = false, false, false
+	m.logSelStart, m.logSelEnd = 0, 0
 }
 
 func (m *model) scrollLogs(key string) {
@@ -105,22 +148,51 @@ func (m *model) reloadSelectedLogs(all ...bool) tea.Cmd {
 	fromStart := len(all) > 0 && all[0]
 	m.stopLogs()
 	m.logs, m.logPartial, m.logScroll, m.logBytes, m.logsTruncated, m.partialTrimmed = nil, "", 0, 0, false, false
+	m.clearLogSelection()
 	m.logFromStart = fromStart
 	m.err = nil
 	if m.status == "logs failed" {
 		m.status = "ready"
 	}
+	// A group header has no stream; keep follow armed so it resumes on the
+	// next container selection.
 	if m.selectedID() == "" {
-		m.follow = false
 		return nil
 	}
-	reader, err := m.currentBackend().OpenLogs(m.currentProfileName(), m.selectedID(), m.follow, fromStart)
+	reader, err := m.currentBackend().OpenLogs(m.currentProfileName(), m.selectedID(), logRequest{follow: m.follow, fromStart: fromStart})
 	if err != nil {
 		m.err, m.status = err, "logs failed"
 		return nil
 	}
 	m.reader = reader
 	return m.readLogsCmd()
+}
+
+// resumeFollowLogs reopens a follow stream after docker logs exits (the
+// container stopped or restarted), resuming just past the newest retained
+// timestamp so nothing is duplicated and the buffer is kept.
+func (m *model) resumeFollowLogs() tea.Cmd {
+	reader, err := m.currentBackend().OpenLogs(m.currentProfileName(), m.selectedID(), logRequest{follow: true, since: m.lastLogSince()})
+	if err != nil {
+		m.follow = false
+		m.err, m.status = err, "logs failed"
+		return nil
+	}
+	m.reader = reader
+	return m.readLogsCmd()
+}
+
+// lastLogSince returns an RFC3339Nano instant just after the newest retained
+// log timestamp, suitable for docker logs --since.
+func (m model) lastLogSince() string {
+	for i := len(m.logs) - 1; i >= 0; i-- {
+		if stamp, _, ok := strings.Cut(m.logs[i], " "); ok {
+			if t, err := time.Parse(time.RFC3339Nano, stamp); err == nil {
+				return t.Add(time.Nanosecond).Format(time.RFC3339Nano)
+			}
+		}
+	}
+	return ""
 }
 
 func (m *model) stopLogs() {
@@ -228,6 +300,8 @@ func (m model) logSearchKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 	m.logScroll = 0
+	// The query changes which lines the selection indices point at.
+	m.clearLogSelection()
 	return m, nil
 }
 

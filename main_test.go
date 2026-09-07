@@ -24,6 +24,7 @@ type fakeBackend struct {
 	logID             string
 	logFollow         bool
 	logFromStart      bool
+	logSince          string
 	logsErr           error
 }
 
@@ -44,9 +45,9 @@ func (b *fakeBackend) Action(profileName, command string, args ...string) error 
 	return nil
 }
 
-func (b *fakeBackend) OpenLogs(profileName, id string, follow, fromStart bool) (*logReader, error) {
+func (b *fakeBackend) OpenLogs(profileName, id string, req logRequest) (*logReader, error) {
 	b.logProfileName, b.logID = profileName, id
-	b.logFollow, b.logFromStart = follow, fromStart
+	b.logFollow, b.logFromStart, b.logSince = req.follow, req.fromStart, req.since
 	return nil, b.logsErr
 }
 
@@ -414,7 +415,7 @@ func TestLogWrappingUsesBoundedTerminalRows(t *testing.T) {
 		logs:       []string{longLine},
 		logWrap:    true,
 	}
-	rows := m.logRows(6, 20)
+	rows, _ := m.logRowsIndexed(6, 20)
 	if len(rows) < 2 || len(rows) > 6 {
 		t.Fatalf("wrapped rows = %#v", rows)
 	}
@@ -428,7 +429,7 @@ func TestLogWrappingUsesBoundedTerminalRows(t *testing.T) {
 	}
 
 	m.logWrap = false
-	rows = m.logRows(6, 20)
+	rows, _ = m.logRowsIndexed(6, 20)
 	if len(rows) != 1 || lipgloss.Width(rows[0]) > 20 || rows[0] == longLine {
 		t.Fatalf("trimmed rows = %#v", rows)
 	}
@@ -446,14 +447,14 @@ func TestWKeyTogglesLogWrapping(t *testing.T) {
 	}
 }
 
-func TestSelectingAComposeGroupPausesLogs(t *testing.T) {
+func TestSelectingAComposeGroupKeepsFollowArmed(t *testing.T) {
 	m := model{
 		follow:     true,
 		containers: []container{{ID: "postgres", Name: "postgres", ComposeProject: "ides", State: "running"}},
 		expanded:   map[string]bool{"ides": true},
 	}
-	if cmd := m.reloadSelectedLogs(); cmd != nil || m.follow {
-		t.Fatal("group selection left log following enabled")
+	if cmd := m.reloadSelectedLogs(); cmd != nil || !m.follow || m.reader != nil {
+		t.Fatalf("group selection = follow %t reader %v", m.follow, m.reader)
 	}
 }
 

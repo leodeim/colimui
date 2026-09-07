@@ -60,6 +60,8 @@ go install github.com/leodeim/colimui@latest
 | `t` | Restart the selected container |
 | `d` | Open deletion confirmation for a stopped container |
 | `y` / `n` | Confirm/cancel deletion |
+| `y` | Copy the selected container's details to the clipboard |
+| `Y` | Copy the visible (filtered) logs to the clipboard |
 | `l` | Reload the selected container's logs |
 | `f` | Pause streaming without clearing logs, or resume from the latest 200 lines |
 | `L` | Search retained log text (pauses streaming) |

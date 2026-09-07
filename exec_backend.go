@@ -34,13 +34,16 @@ func (execBackend) Action(profileName, command string, args ...string) error {
 	return err
 }
 
-func (execBackend) OpenLogs(profileName, id string, follow, fromStart bool) (*logReader, error) {
+func (execBackend) OpenLogs(profileName, id string, req logRequest) (*logReader, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	args := []string{"logs", "--timestamps"}
-	if !fromStart {
+	switch {
+	case req.since != "":
+		args = append(args, "--since", req.since)
+	case !req.fromStart:
 		args = append(args, "--tail", "200")
 	}
-	if follow {
+	if req.follow {
 		args = append(args, "--follow")
 	}
 	args = append(args, id)

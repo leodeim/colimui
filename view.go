@@ -26,11 +26,39 @@ var (
 	runningStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("#34D399"))
 	stoppedStyle     = lipgloss.NewStyle().Foreground(muted)
 	logHeadingStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("#7DD3FC")).Bold(true)
+	logSelectStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("#F8FAFC")).Background(panel)
 	statusStyle      = lipgloss.NewStyle().Foreground(yellow)
 	errorStyle       = lipgloss.NewStyle().Foreground(red)
 )
 
 var spinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+
+// paneContentTop is the screen row of a pane's first content line: the
+// dashboard header occupies row 0 and the pane's top border row 1.
+const paneContentTop = 2
+
+// paneLayout is the single source of truth for pane geometry, shared by the
+// renderer and the mouse hit-testing.
+type paneLayout struct {
+	leftWidth     int
+	rightWidth    int
+	bodyHeight    int
+	detailsHeight int
+	logsHeight    int
+}
+
+func (m model) paneLayout() paneLayout {
+	bodyHeight := max(5, m.height-4)
+	leftWidth := min(38, max(26, m.width/3))
+	detailsHeight := min(10, max(2, bodyHeight/2))
+	return paneLayout{
+		leftWidth:     leftWidth,
+		rightWidth:    max(20, m.width-leftWidth-1),
+		bodyHeight:    bodyHeight,
+		detailsHeight: detailsHeight,
+		logsHeight:    max(1, bodyHeight-detailsHeight-2),
+	}
+}
 
 func (m model) View() string {
 	if m.width == 0 {
@@ -112,14 +140,10 @@ func (m model) renderDashboard() string {
 		header += "  " + mutedStyle.Render(fmt.Sprintf("%d cpu · %s ram · %s", p.CPUs, humanBytes(p.Memory), humanBytes(p.Disk)))
 	}
 
-	bodyHeight := max(5, m.height-4)
-	leftWidth := min(38, max(26, m.width/3))
-	rightWidth := max(20, m.width-leftWidth-1)
-	left := m.renderContainers(bodyHeight, leftWidth)
-	detailsHeight := min(10, max(2, bodyHeight/2))
-	logsHeight := max(1, bodyHeight-detailsHeight-2)
-	details := m.renderDetails(detailsHeight, rightWidth)
-	logs := m.renderLogs(logsHeight, rightWidth)
+	layout := m.paneLayout()
+	left := m.renderContainers(layout.bodyHeight, layout.leftWidth)
+	details := m.renderDetails(layout.detailsHeight, layout.rightWidth)
+	logs := m.renderLogs(layout.logsHeight, layout.rightWidth)
 	right := lipgloss.JoinVertical(lipgloss.Left, details, logs)
 	panes := lipgloss.JoinHorizontal(lipgloss.Top, left, right)
 
@@ -216,9 +240,8 @@ func (m model) renderContainers(height, width int) string {
 			lines = append(lines, mutedStyle.Render("no containers"))
 		}
 	} else {
-		rowCount := max(1, height-len(lines))
-		start := max(0, m.containerIndex-rowCount+1)
-		start = min(start, max(0, len(items)-rowCount))
+		headerLines, start := m.containerListWindow(height)
+		rowCount := max(1, height-headerLines)
 		end := min(len(items), start+rowCount)
 		rowWidth := max(8, width-4)
 		for i := start; i < end; i++ {
@@ -276,6 +299,21 @@ func (m model) renderContainers(height, width int) string {
 		}
 	}
 	return m.renderPane(lines, width, height, m.focus == 0)
+}
+
+// containerListWindow reports the containers pane's header row count and the
+// first visible list item, mirroring what renderContainers draws so mouse
+// clicks land on the right item.
+func (m model) containerListWindow(height int) (headerLines, start int) {
+	headerLines = 1
+	if m.searchQuery != "" || m.runningOnly || m.searchEditing {
+		headerLines = 2
+	}
+	items := m.listItems()
+	rowCount := max(1, height-headerLines)
+	start = max(0, m.containerIndex-rowCount+1)
+	start = min(start, max(0, len(items)-rowCount))
+	return headerLines, start
 }
 
 func actionProgressLabel(action string) string {
@@ -339,7 +377,14 @@ func (m model) renderLogs(height, width int) string {
 		if len(m.filteredLogs()) == 0 {
 			lines = append(lines, mutedStyle.Render("no matching logs"))
 		}
-		lines = append(lines, m.logRows(max(0, height-len(lines)-1), max(1, width-4))...)
+		rows, indices := m.logRowsIndexed(max(0, height-len(lines)-1), max(1, width-4))
+		lo, hi := min(m.logSelStart, m.logSelEnd), max(m.logSelStart, m.logSelEnd)
+		for i, row := range rows {
+			if m.logSelActive && indices[i] >= lo && indices[i] <= hi {
+				row = logSelectStyle.Render(row)
+			}
+			lines = append(lines, row)
+		}
 	}
 	// Lipgloss sets a minimum height; it does not clip wrapped text. Constrain
 	// every row and the row count so long container logs cannot expand the pane.
@@ -351,25 +396,17 @@ func (m model) renderLogs(height, width int) string {
 	return m.renderPane(lines, width, height, m.focus == 1)
 }
 
-// logRows turns logical log entries into bounded terminal rows. Wrapping here,
-// rather than relying on the terminal, keeps the pane height stable.
-func (m model) logRows(count, width int) []string {
-	if count <= 0 {
-		return nil
+// logHeaderLines mirrors the non-log heading rows renderLogs draws, so mouse
+// hit-testing can find the first log row.
+func (m model) logHeaderLines() int {
+	lines := 1
+	if m.logQuery != "" {
+		lines++
 	}
-	var rows []string
-	for _, line := range m.visibleLogs(count) {
-		text := m.logText(line)
-		if m.logWrap {
-			rows = append(rows, strings.Split(ansi.HardwrapWc(text, width, true), "\n")...)
-		} else {
-			rows = append(rows, ansi.Truncate(text, width, ""))
-		}
+	if m.logsTruncated || m.partialTrimmed {
+		lines++
 	}
-	if len(rows) > count {
-		rows = rows[len(rows)-count:]
-	}
-	return rows
+	return lines
 }
 
 func (m model) renderPane(lines []string, width, height int, focused bool) string {

@@ -56,6 +56,8 @@ type activeAction struct {
 
 type tickMsg time.Time
 
+type logRetryMsg struct{}
+
 type spinnerTickMsg time.Time
 
 type logsMsg struct {
@@ -117,6 +119,11 @@ type model struct {
 	partialTrimmed   bool
 	logScroll        int
 	logFromStart     bool
+	logSelecting     bool
+	logSelDragged    bool
+	logSelActive     bool
+	logSelStart      int
+	logSelEnd        int
 	follow           bool
 	reader           *logReader
 	expanded         map[string]bool
