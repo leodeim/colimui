@@ -336,7 +336,7 @@ func TestStartKeyWorksWithoutProfileRecord(t *testing.T) {
 func TestActionMenuShowsShortcuts(t *testing.T) {
 	m := model{width: 100, height: 28, status: "ready", actionMenu: true, containers: []container{{Name: "api", State: "running"}}}
 	view := m.View()
-	for _, text := range []string{"colimui", "containers", "actions", "stop api", "restart api", "delete api", "keyboard shortcuts", "enter run", "[] profile"} {
+	for _, text := range []string{"colimui", "containers", "actions", "stop api", "restart api", "delete api", "keyboard shortcuts", "enter or shortcut key run", "[] profile"} {
 		if !strings.Contains(view, text) {
 			t.Fatalf("action menu is missing %q: %q", text, view)
 		}
@@ -352,6 +352,25 @@ func TestActionMenuRunsSelectedAction(t *testing.T) {
 	got := updated.(model)
 	if got.actionMenu || got.status != "starting default" || command == nil {
 		t.Fatalf("menu action = open %t status %q command %t", got.actionMenu, got.status, command != nil)
+	}
+}
+
+func TestActionMenuForwardsShortcutKeys(t *testing.T) {
+	backend := &fakeBackend{}
+	m := newModel(backend, func() tea.Cmd { return nil })
+	m.profiles = []profile{{Name: "default", Status: "Running"}}
+	m.containers = []container{{ID: "one", Name: "one", State: "running", Status: "Up"}}
+	m.actionMenu = true
+	updated, command := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'t'}})
+	got := updated.(model)
+	if got.actionMenu || got.status != "restarting one" || command == nil {
+		t.Fatalf("forwarded shortcut = open %t status %q command %t", got.actionMenu, got.status, command != nil)
+	}
+
+	got.actionMenu = true
+	updated, _ = got.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'z'}})
+	if updated.(model).actionMenu {
+		t.Fatal("unbound key left the menu open")
 	}
 }
 

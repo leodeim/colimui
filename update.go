@@ -489,7 +489,9 @@ func (m model) actionMenuKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.actionMenu = false
 		return m.key(shortcutKey(item.shortcut))
 	}
-	return m, nil
+
+	m.actionMenu = false
+	return m.key(msg)
 }
 
 func shortcutKey(shortcut string) tea.KeyMsg {

@@ -186,7 +186,7 @@ func (m model) renderActionMenu() string {
 			lines = append(lines, "  "+label+"  "+mutedStyle.Render(shortcut))
 		}
 	}
-	lines = append(lines, "", logHeadingStyle.Render("keyboard shortcuts"), mutedStyle.Render("↑↓/j k select  enter run  esc/? close"), mutedStyle.Render("[] profile  tab focus  end latest logs  q quit"))
+	lines = append(lines, "", logHeadingStyle.Render("keyboard shortcuts"), mutedStyle.Render("↑↓/j k select  enter or shortcut key run  esc/? close"), mutedStyle.Render("[] profile  tab focus  end latest logs  q quit"))
 	popupWidth := min(78, max(38, m.width-4))
 	return lipgloss.NewStyle().Width(popupWidth).Padding(1, 2).Border(lipgloss.RoundedBorder()).BorderForeground(accent).Background(popupBackground).Render(strings.Join(lines, "\n"))
 }
