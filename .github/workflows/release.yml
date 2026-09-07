@@ -2,11 +2,17 @@ name: Release
 
 on:
   push:
+    branches:
+      - "main"
     tags:
       - "v*"
 
 permissions:
   contents: write
+
+# Serialize runs so concurrent pushes to main cannot race on the next tag.
+concurrency:
+  group: release
 
 jobs:
   release:
@@ -15,6 +21,20 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@v6
+        with:
+          # Full history so the latest release tag is available for the bump.
+          fetch-depth: 0
+
+      - name: Determine release tag
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            echo "RELEASE_TAG=${GITHUB_REF_NAME}" >> "$GITHUB_ENV"
+          else
+            latest=$(git tag --list 'v*' --sort=-v:refname | head -n1)
+            latest=${latest:-v0.0.0}
+            IFS=. read -r major minor patch <<<"${latest#v}"
+            echo "RELEASE_TAG=v${major}.${minor}.$((patch + 1))" >> "$GITHUB_ENV"
+          fi
 
       - name: Set up Go
         uses: actions/setup-go@v6
@@ -32,7 +52,7 @@ jobs:
           for target in darwin/amd64 darwin/arm64 linux/amd64 linux/arm64; do
             os=${target%/*}
             arch=${target#*/}
-            GOOS="$os" GOARCH="$arch" go build -trimpath -ldflags="-s -w -X main.version=${GITHUB_REF_NAME}" -o "dist/colimui_${os}_${arch}" .
+            GOOS="$os" GOARCH="$arch" go build -trimpath -ldflags="-s -w -X main.version=${RELEASE_TAG}" -o "dist/colimui_${os}_${arch}" .
           done
 
       - name: Create checksums
@@ -43,10 +63,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
-            gh release upload "${GITHUB_REF_NAME}" dist/* --clobber
+          if gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
+            gh release upload "${RELEASE_TAG}" dist/* --clobber
           else
-            gh release create "${GITHUB_REF_NAME}" dist/* \
+            # Creating the release also creates the tag at the built commit.
+            gh release create "${RELEASE_TAG}" dist/* \
+              --target "$GITHUB_SHA" \
               --generate-notes \
-              --title "colimUI ${GITHUB_REF_NAME}"
+              --title "colimUI ${RELEASE_TAG}"
           fi
