@@ -139,8 +139,13 @@ type model struct {
 	updateVersion    string
 	actionMenu       bool
 	actionIndex      int
+	autoStop         bool
+	autoStopAfter    time.Duration
+	idleProfile      string
+	idleSince        time.Time
 	backend          Backend
 	tick             tickFactory
+	now              func() time.Time
 }
 
 func initialModel() model {
@@ -154,7 +159,14 @@ func newModel(backend Backend, tick tickFactory) model {
 	if tick == nil {
 		tick = defaultTick
 	}
-	return model{focus: 0, status: "loading", expanded: make(map[string]bool), refreshID: 1, backend: backend, tick: tick}
+	return model{focus: 0, status: "loading", expanded: make(map[string]bool), refreshID: 1, autoStopAfter: autoStopDefault, backend: backend, tick: tick, now: time.Now}
+}
+
+func (m model) clock() time.Time {
+	if m.now != nil {
+		return m.now()
+	}
+	return time.Now()
 }
 
 func (m model) currentBackend() Backend {

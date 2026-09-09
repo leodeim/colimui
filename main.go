@@ -27,7 +27,13 @@ func main() {
 	if os.Getenv("COLIMUI_NO_COLOR") != "1" {
 		lipgloss.SetColorProfile(termenv.TrueColor)
 	}
-	if _, err := tea.NewProgram(initialModel(), tea.WithAltScreen(), tea.WithMouseCellMotion()).Run(); err != nil {
+	m := initialModel()
+	var err error
+	if m.autoStopAfter, m.autoStop, err = autoStopFromEnv(); err != nil {
+		fmt.Fprintln(os.Stderr, "colimui:", err)
+		os.Exit(1)
+	}
+	if _, err := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion()).Run(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
