@@ -27,8 +27,26 @@ func main() {
 	if os.Getenv("COLIMUI_NO_COLOR") != "1" {
 		lipgloss.SetColorProfile(termenv.TrueColor)
 	}
-	if _, err := tea.NewProgram(initialModel(), tea.WithAltScreen(), tea.WithMouseCellMotion()).Run(); err != nil {
+	m, err := configuredModel()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "colimui:", err)
+		os.Exit(1)
+	}
+	if _, err := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion()).Run(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
+}
+
+// configuredModel applies the saved config file and environment overrides.
+func configuredModel() (model, error) {
+	m := initialModel()
+	m.settingsFile = settingsPath()
+	saved, err := loadSettings(m.settingsFile)
+	if err != nil {
+		return m, err
+	}
+	m.logTimestamps, m.logWrap = saved.LogTimestamps, saved.LogWrap
+	m.autoStopAfter, m.autoStop, err = resolveAutoStop(os.Getenv(autoStopEnv), saved, m.settingsFile)
+	return m, err
 }

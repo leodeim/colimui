@@ -57,6 +57,7 @@ go install github.com/leodeim/colimui@latest
 | `r` | Refresh profiles and containers |
 | `[` / `]` | Switch to the previous/next Colima profile |
 | `s` / `x` | Start/stop the current Colima profile |
+| `a` | Enable/disable idle auto-stop (saved for future runs) |
 | `t` | Restart the selected container |
 | `e` | Open an interactive shell in the selected container |
 | `d` | Open deletion confirmation for a stopped container |
@@ -72,6 +73,15 @@ go install github.com/leodeim/colimui@latest
 | `Page Up` / `Down` | Scroll logs |
 | `End` | Jump to the latest logs |
 | `q` | Quit, or close the current menu |
+
+## Idle auto-stop
+
+When the current profile has had no active containers (running, restarting, or paused) 
+for 30 minutes, it runs `colima stop` for you. The header shows a countdown ("idle · auto-stop in
+12m") once the timer is armed; press `a` to turn the feature off or back on.
+
+Set `COLIMUI_AUTO_STOP` to override the saved setting for a single run: a
+duration such as `45m` or `2h` (minimum `1m`), or `off` to disable it.
 
 ## New macOS setup script
 

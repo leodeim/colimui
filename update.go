@@ -109,6 +109,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.status = "ready"
 		}
 		m.validateDeleteConfirmation()
+		autoStopCmd := m.trackIdle()
 		if oldID != m.selectedID() {
 			m.stopLogs()
 			m.logs, m.logPartial, m.logScroll, m.logFromStart, m.logBytes, m.logsTruncated, m.partialTrimmed = nil, "", 0, false, 0, false, false
@@ -118,11 +119,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.reader, err = m.currentBackend().OpenLogs(m.currentProfileName(), m.selectedID(), logRequest{follow: m.follow})
 				if err != nil {
 					m.err, m.status = err, "logs failed"
-					return m, nil
+					return m, autoStopCmd
 				}
-				return m, m.readLogsCmd()
+				return m, tea.Batch(m.readLogsCmd(), autoStopCmd)
 			}
 		}
+		return m, autoStopCmd
 	case actionMsg:
 		action, ok := m.activeActions[msg.requestID]
 		if !ok {
@@ -280,8 +282,12 @@ func (m model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.pauseLogs()
 	case "T":
 		m.logTimestamps = !m.logTimestamps
+		m.status = "log timestamps " + onOff(m.logTimestamps)
+		m.persistSetting(func(s *settings) { s.LogTimestamps = m.logTimestamps })
 	case "w":
 		m.logWrap = !m.logWrap
+		m.status = "log wrap " + onOff(m.logWrap)
+		m.persistSetting(func(s *settings) { s.LogWrap = m.logWrap })
 	case "/":
 		m.searchEditing, m.searchBefore = true, m.searchQuery
 		m.focus = 0
@@ -329,6 +335,17 @@ func (m model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "r":
 		m.status = "refreshing"
 		return m, m.queueRefresh(m.currentProfileName())
+	case "a":
+		m.autoStop = !m.autoStop
+		saved := "off"
+		m.status = "idle auto-stop off"
+		if m.autoStop {
+			saved = m.autoStopAfter.String()
+			m.status = "idle auto-stop on (" + formatCountdown(m.autoStopAfter) + ")"
+		} else {
+			m.clearIdle()
+		}
+		m.persistSetting(func(s *settings) { s.AutoStop = saved })
 	case "s":
 		if p := m.currentProfile(); !m.hasActiveProfileAction() && (p == nil || !isRunning(p.Status)) {
 			name := m.currentProfileName()
@@ -461,8 +478,14 @@ func (m model) actionMenuItems() []actionMenuItem {
 		followLabel = "pause logs for " + containerName
 	}
 
+	autoStopLabel := "enable idle auto-stop (" + formatCountdown(m.autoStopAfter) + ")"
+	if m.autoStop {
+		autoStopLabel = "disable idle auto-stop (" + formatCountdown(m.autoStopAfter) + ")"
+	}
+
 	return []actionMenuItem{
 		{label: profileLabel, shortcut: profileShortcut, enabled: !m.hasActiveProfileAction()},
+		{label: autoStopLabel, shortcut: "a", enabled: true},
 		{label: containerLabel, shortcut: "enter", enabled: container != nil && !containerBusy},
 		{label: "restart " + containerName, shortcut: "t", enabled: container != nil && !containerBusy},
 		{label: "open shell in " + containerName, shortcut: "e", enabled: container != nil && !containerBusy && container.State == "running"},
@@ -514,6 +537,13 @@ func (m model) actionMenuKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	m.actionMenu = false
 	return m.key(msg)
+}
+
+func onOff(enabled bool) string {
+	if enabled {
+		return "on"
+	}
+	return "off"
 }
 
 func shortcutKey(shortcut string) tea.KeyMsg {

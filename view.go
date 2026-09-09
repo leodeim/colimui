@@ -138,6 +138,9 @@ func (m model) renderDashboard() string {
 		}
 		header += "  " + profileStatus.Render(indicator+" "+strings.ToLower(sanitizeText(p.Status)))
 		header += "  " + mutedStyle.Render(fmt.Sprintf("%d cpu · %s ram · %s", p.CPUs, humanBytes(p.Memory), humanBytes(p.Disk)))
+		if remaining, idle := m.idleRemaining(); idle {
+			header += "  " + statusStyle.Render("idle · auto-stop in "+formatCountdown(remaining))
+		}
 	}
 
 	layout := m.paneLayout()
