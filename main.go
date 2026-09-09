@@ -28,8 +28,9 @@ func main() {
 		lipgloss.SetColorProfile(termenv.TrueColor)
 	}
 	m := initialModel()
+	m.settingsFile = settingsPath()
 	var err error
-	if m.autoStopAfter, m.autoStop, err = autoStopFromEnv(); err != nil {
+	if m.autoStopAfter, m.autoStop, err = resolveAutoStop(os.Getenv(autoStopEnv), m.settingsFile); err != nil {
 		fmt.Fprintln(os.Stderr, "colimui:", err)
 		os.Exit(1)
 	}

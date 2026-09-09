@@ -143,6 +143,7 @@ type model struct {
 	autoStopAfter    time.Duration
 	idleProfile      string
 	idleSince        time.Time
+	settingsFile     string
 	backend          Backend
 	tick             tickFactory
 	now              func() time.Time

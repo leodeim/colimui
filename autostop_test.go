@@ -2,6 +2,8 @@ package main
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -9,30 +11,42 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-func TestAutoStopFromEnv(t *testing.T) {
+func TestResolveAutoStop(t *testing.T) {
 	tests := []struct {
 		name    string
-		value   string
+		env     string
+		saved   string
 		after   time.Duration
 		enabled bool
 		wantErr bool
 	}{
-		{"unset", "", autoStopDefault, true, false},
-		{"off", "off", autoStopDefault, false, false},
-		{"zero", "0", autoStopDefault, false, false},
-		{"custom", "45m", 45 * time.Minute, true, false},
-		{"below minimum", "30s", 0, false, true},
-		{"garbage", "soon", 0, false, true},
+		{name: "defaults", after: autoStopDefault, enabled: true},
+		{name: "env off", env: "off", after: autoStopDefault, enabled: false},
+		{name: "env zero", env: "0", after: autoStopDefault, enabled: false},
+		{name: "env custom", env: "45m", after: 45 * time.Minute, enabled: true},
+		{name: "env below minimum", env: "30s", wantErr: true},
+		{name: "env garbage", env: "soon", wantErr: true},
+		{name: "saved off", saved: `{"auto_stop":"off"}`, after: autoStopDefault, enabled: false},
+		{name: "saved custom", saved: `{"auto_stop":"2h"}`, after: 2 * time.Hour, enabled: true},
+		{name: "saved empty object", saved: `{}`, after: autoStopDefault, enabled: true},
+		{name: "saved garbage value", saved: `{"auto_stop":"soon"}`, wantErr: true},
+		{name: "saved malformed json", saved: `{`, wantErr: true},
+		{name: "env beats saved", env: "off", saved: `{"auto_stop":"2h"}`, after: autoStopDefault, enabled: false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Setenv(autoStopEnv, tt.value)
-			after, enabled, err := autoStopFromEnv()
+			path := filepath.Join(t.TempDir(), "config.json")
+			if tt.saved != "" {
+				if err := os.WriteFile(path, []byte(tt.saved), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			after, enabled, err := resolveAutoStop(tt.env, path)
 			if (err != nil) != tt.wantErr {
-				t.Fatalf("autoStopFromEnv() error = %v, wantErr %t", err, tt.wantErr)
+				t.Fatalf("resolveAutoStop() error = %v, wantErr %t", err, tt.wantErr)
 			}
 			if err == nil && (after != tt.after || enabled != tt.enabled) {
-				t.Fatalf("autoStopFromEnv() = %v %t, want %v %t", after, enabled, tt.after, tt.enabled)
+				t.Fatalf("resolveAutoStop() = %v %t, want %v %t", after, enabled, tt.after, tt.enabled)
 			}
 		})
 	}
@@ -125,10 +139,11 @@ func TestIdleTimerResets(t *testing.T) {
 	}
 }
 
-func TestAutoStopToggleKey(t *testing.T) {
+func TestAutoStopToggleKeyPersists(t *testing.T) {
 	backend := &fakeBackend{}
 	clock := time.Now()
 	m := idleModel(backend, &clock)
+	m.settingsFile = filepath.Join(t.TempDir(), "colimui", "config.json")
 	m, _ = refreshAt(m, refreshMsg{profileName: "default", profiles: []profile{{Name: "default", Status: "Running"}}})
 	if _, idle := m.idleRemaining(); !idle {
 		t.Fatal("idle timer not armed")
@@ -138,9 +153,30 @@ func TestAutoStopToggleKey(t *testing.T) {
 	if _, idle := m.idleRemaining(); m.autoStop || idle || m.status != "idle auto-stop off" {
 		t.Fatalf("toggle off: enabled %t idle %t status %q", m.autoStop, idle, m.status)
 	}
+	if _, enabled, err := resolveAutoStop("", m.settingsFile); err != nil || enabled {
+		t.Fatalf("saved setting after toggle off = enabled %t err %v", enabled, err)
+	}
 	updated, _ = m.key(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
 	m = updated.(model)
 	if !m.autoStop || m.status != "idle auto-stop on (30m)" {
 		t.Fatalf("toggle on: enabled %t status %q", m.autoStop, m.status)
+	}
+	if after, enabled, err := resolveAutoStop("", m.settingsFile); err != nil || !enabled || after != autoStopDefault {
+		t.Fatalf("saved setting after toggle on = %v %t err %v", after, enabled, err)
+	}
+}
+
+func TestAutoStopToggleReportsSaveFailure(t *testing.T) {
+	backend := &fakeBackend{}
+	clock := time.Now()
+	m := idleModel(backend, &clock)
+	m.settingsFile = filepath.Join(t.TempDir(), "not-a-dir", "config.json")
+	if err := os.WriteFile(filepath.Dir(m.settingsFile), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	updated, _ := m.key(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	m = updated.(model)
+	if m.autoStop || m.err == nil || !strings.HasSuffix(m.status, "(not saved)") {
+		t.Fatalf("save failure: enabled %t err %v status %q", m.autoStop, m.err, m.status)
 	}
 }

@@ -339,6 +339,9 @@ func (m model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.clearIdle()
 			m.status = "idle auto-stop off"
 		}
+		if err := saveAutoStop(m.settingsFile, m.autoStop, m.autoStopAfter); err != nil {
+			m.err, m.status = err, m.status+" (not saved)"
+		}
 	case "s":
 		if p := m.currentProfile(); !m.hasActiveProfileAction() && (p == nil || !isRunning(p.Status)) {
 			name := m.currentProfileName()
