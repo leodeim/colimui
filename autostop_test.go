@@ -26,22 +26,14 @@ func TestResolveAutoStop(t *testing.T) {
 		{name: "env custom", env: "45m", after: 45 * time.Minute, enabled: true},
 		{name: "env below minimum", env: "30s", wantErr: true},
 		{name: "env garbage", env: "soon", wantErr: true},
-		{name: "saved off", saved: `{"auto_stop":"off"}`, after: autoStopDefault, enabled: false},
-		{name: "saved custom", saved: `{"auto_stop":"2h"}`, after: 2 * time.Hour, enabled: true},
-		{name: "saved empty object", saved: `{}`, after: autoStopDefault, enabled: true},
-		{name: "saved garbage value", saved: `{"auto_stop":"soon"}`, wantErr: true},
-		{name: "saved malformed json", saved: `{`, wantErr: true},
-		{name: "env beats saved", env: "off", saved: `{"auto_stop":"2h"}`, after: autoStopDefault, enabled: false},
+		{name: "saved off", saved: "off", after: autoStopDefault, enabled: false},
+		{name: "saved custom", saved: "2h", after: 2 * time.Hour, enabled: true},
+		{name: "saved garbage value", saved: "soon", wantErr: true},
+		{name: "env beats saved", env: "off", saved: "2h", after: autoStopDefault, enabled: false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			path := filepath.Join(t.TempDir(), "config.json")
-			if tt.saved != "" {
-				if err := os.WriteFile(path, []byte(tt.saved), 0o644); err != nil {
-					t.Fatal(err)
-				}
-			}
-			after, enabled, err := resolveAutoStop(tt.env, path)
+			after, enabled, err := resolveAutoStop(tt.env, settings{AutoStop: tt.saved}, "config.json")
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("resolveAutoStop() error = %v, wantErr %t", err, tt.wantErr)
 			}
@@ -153,17 +145,30 @@ func TestAutoStopToggleKeyPersists(t *testing.T) {
 	if _, idle := m.idleRemaining(); m.autoStop || idle || m.status != "idle auto-stop off" {
 		t.Fatalf("toggle off: enabled %t idle %t status %q", m.autoStop, idle, m.status)
 	}
-	if _, enabled, err := resolveAutoStop("", m.settingsFile); err != nil || enabled {
-		t.Fatalf("saved setting after toggle off = enabled %t err %v", enabled, err)
+	if enabled, after := reloadAutoStop(t, m.settingsFile); enabled {
+		t.Fatalf("saved setting after toggle off = enabled %t after %v", enabled, after)
 	}
 	updated, _ = m.key(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
 	m = updated.(model)
 	if !m.autoStop || m.status != "idle auto-stop on (30m)" {
 		t.Fatalf("toggle on: enabled %t status %q", m.autoStop, m.status)
 	}
-	if after, enabled, err := resolveAutoStop("", m.settingsFile); err != nil || !enabled || after != autoStopDefault {
-		t.Fatalf("saved setting after toggle on = %v %t err %v", after, enabled, err)
+	if enabled, after := reloadAutoStop(t, m.settingsFile); !enabled || after != autoStopDefault {
+		t.Fatalf("saved setting after toggle on = enabled %t after %v", enabled, after)
 	}
+}
+
+func reloadAutoStop(t *testing.T, path string) (bool, time.Duration) {
+	t.Helper()
+	saved, err := loadSettings(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	after, enabled, err := resolveAutoStop("", saved, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return enabled, after
 }
 
 func TestAutoStopToggleReportsSaveFailure(t *testing.T) {

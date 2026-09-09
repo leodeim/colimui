@@ -1,11 +1,8 @@
 package main
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -15,33 +12,16 @@ import (
 const autoStopDefault = 30 * time.Minute
 const autoStopEnv = "COLIMUI_AUTO_STOP"
 
-type settings struct {
-	AutoStop string `json:"auto_stop,omitempty"`
-}
-
-// settingsPath is empty when no config directory can be resolved; persistence
-// is then disabled and the toggle applies to the current run only.
-func settingsPath() string {
-	dir, err := os.UserConfigDir()
-	if err != nil {
-		return ""
-	}
-	return filepath.Join(dir, "colimui", "config.json")
-}
-
 // resolveAutoStop picks the idle window: COLIMUI_AUTO_STOP wins for this run,
-// then the saved config, then the default.
-func resolveAutoStop(envValue, path string) (time.Duration, bool, error) {
+// then the saved config, then the default. path only names the config file in
+// errors.
+func resolveAutoStop(envValue string, saved settings, path string) (time.Duration, bool, error) {
 	if value := strings.TrimSpace(envValue); value != "" {
 		after, enabled, err := parseAutoStop(value)
 		if err != nil {
 			return 0, false, fmt.Errorf("invalid %s %q: %w", autoStopEnv, value, err)
 		}
 		return after, enabled, nil
-	}
-	saved, err := loadSettings(path)
-	if err != nil {
-		return 0, false, err
 	}
 	if saved.AutoStop == "" {
 		return autoStopDefault, true, nil
@@ -65,46 +45,6 @@ func parseAutoStop(value string) (time.Duration, bool, error) {
 		return 0, false, errors.New("use a duration of 1m or more (e.g. 45m, 2h) or \"off\"")
 	}
 	return after, true, nil
-}
-
-func loadSettings(path string) (settings, error) {
-	var s settings
-	if path == "" {
-		return s, nil
-	}
-	data, err := os.ReadFile(path)
-	if errors.Is(err, os.ErrNotExist) {
-		return s, nil
-	}
-	if err != nil {
-		return s, err
-	}
-	if err := json.Unmarshal(data, &s); err != nil {
-		return s, fmt.Errorf("parsing %s: %w", path, err)
-	}
-	return s, nil
-}
-
-func saveAutoStop(path string, enabled bool, after time.Duration) error {
-	if path == "" {
-		return nil
-	}
-	s, err := loadSettings(path)
-	if err != nil {
-		return err
-	}
-	s.AutoStop = "off"
-	if enabled {
-		s.AutoStop = after.String()
-	}
-	data, err := json.MarshalIndent(s, "", "  ")
-	if err != nil {
-		return err
-	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	return os.WriteFile(path, append(data, '\n'), 0o644)
 }
 
 // isActive reports states that must hold off the idle auto-stop; paused

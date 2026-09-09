@@ -282,8 +282,12 @@ func (m model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.pauseLogs()
 	case "T":
 		m.logTimestamps = !m.logTimestamps
+		m.status = "log timestamps " + onOff(m.logTimestamps)
+		m.persistSetting(func(s *settings) { s.LogTimestamps = m.logTimestamps })
 	case "w":
 		m.logWrap = !m.logWrap
+		m.status = "log wrap " + onOff(m.logWrap)
+		m.persistSetting(func(s *settings) { s.LogWrap = m.logWrap })
 	case "/":
 		m.searchEditing, m.searchBefore = true, m.searchQuery
 		m.focus = 0
@@ -333,15 +337,15 @@ func (m model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.queueRefresh(m.currentProfileName())
 	case "a":
 		m.autoStop = !m.autoStop
+		saved := "off"
+		m.status = "idle auto-stop off"
 		if m.autoStop {
+			saved = m.autoStopAfter.String()
 			m.status = "idle auto-stop on (" + formatCountdown(m.autoStopAfter) + ")"
 		} else {
 			m.clearIdle()
-			m.status = "idle auto-stop off"
 		}
-		if err := saveAutoStop(m.settingsFile, m.autoStop, m.autoStopAfter); err != nil {
-			m.err, m.status = err, m.status+" (not saved)"
-		}
+		m.persistSetting(func(s *settings) { s.AutoStop = saved })
 	case "s":
 		if p := m.currentProfile(); !m.hasActiveProfileAction() && (p == nil || !isRunning(p.Status)) {
 			name := m.currentProfileName()
@@ -533,6 +537,13 @@ func (m model) actionMenuKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	m.actionMenu = false
 	return m.key(msg)
+}
+
+func onOff(enabled bool) string {
+	if enabled {
+		return "on"
+	}
+	return "off"
 }
 
 func shortcutKey(shortcut string) tea.KeyMsg {
