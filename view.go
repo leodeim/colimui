@@ -175,19 +175,30 @@ func (m model) renderDashboard() string {
 
 func (m model) renderActionMenu() string {
 	items := m.actionMenuItems()
+	// The popup adds 11 chrome lines (border, padding, heading, footer) plus
+	// one for the overflow marker; window the items so the overlay never
+	// clips the footer, keeping the selected row visible.
+	start, end := 0, len(items)
+	if visible := max(3, m.height-12); len(items) > visible {
+		start = min(max(0, m.actionIndex-visible/2), len(items)-visible)
+		end = start + visible
+	}
 	lines := []string{titleStyle.Render("actions"), mutedStyle.Render("select an action and press enter"), ""}
-	for index, item := range items {
+	for index, item := range items[start:end] {
 		label := item.label
 		shortcut := "[" + item.shortcut + "]"
 		if !item.enabled {
 			lines = append(lines, mutedStyle.Render("  "+label+"  "+shortcut))
 			continue
 		}
-		if index == m.actionIndex {
+		if start+index == m.actionIndex {
 			lines = append(lines, selectedRowStyle.Render("> "+label+"  "+shortcut))
 		} else {
 			lines = append(lines, "  "+label+"  "+mutedStyle.Render(shortcut))
 		}
+	}
+	if hidden := len(items) - (end - start); hidden > 0 {
+		lines = append(lines, mutedStyle.Render(fmt.Sprintf("  ↑↓ %d more", hidden)))
 	}
 	lines = append(lines, "", logHeadingStyle.Render("keyboard shortcuts"), mutedStyle.Render("↑↓/j k select  enter or shortcut key run  esc/? close"), mutedStyle.Render("[] profile  tab focus  end latest logs  q quit"))
 	popupWidth := min(78, max(38, m.width-4))

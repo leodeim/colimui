@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"os/exec"
+	"runtime"
+	"slices"
 	"strings"
 	"time"
 
@@ -346,6 +348,21 @@ func (m model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.clearIdle()
 		}
 		m.persistSetting(func(s *settings) { s.AutoStop = saved })
+	case "m":
+		if runtime.GOOS != "darwin" {
+			return m, nil
+		}
+		toggle := spawnMenubar
+		if m.menubar {
+			toggle = stopMenubar
+		}
+		if err := toggle(); err != nil {
+			m.err, m.status = err, "menu bar toggle failed"
+			return m, nil
+		}
+		m.menubar = !m.menubar
+		m.status = "menu bar item " + onOff(m.menubar)
+		m.persistSetting(func(s *settings) { s.Menubar = m.menubar })
 	case "s":
 		if p := m.currentProfile(); !m.hasActiveProfileAction() && (p == nil || !isRunning(p.Status)) {
 			name := m.currentProfileName()
@@ -483,7 +500,7 @@ func (m model) actionMenuItems() []actionMenuItem {
 		autoStopLabel = "disable idle auto-stop (" + formatCountdown(m.autoStopAfter) + ")"
 	}
 
-	return []actionMenuItem{
+	items := []actionMenuItem{
 		{label: profileLabel, shortcut: profileShortcut, enabled: !m.hasActiveProfileAction()},
 		{label: autoStopLabel, shortcut: "a", enabled: true},
 		{label: containerLabel, shortcut: "enter", enabled: container != nil && !containerBusy},
@@ -504,6 +521,11 @@ func (m model) actionMenuItems() []actionMenuItem {
 		{label: "search containers", shortcut: "/", enabled: true},
 		{label: map[bool]string{false: "show running only", true: "show all states"}[m.runningOnly], shortcut: "R", enabled: true},
 	}
+	if runtime.GOOS == "darwin" {
+		label := map[bool]string{false: "enable macOS menu bar item", true: "disable macOS menu bar item"}[m.menubar]
+		items = slices.Insert(items, 2, actionMenuItem{label: label, shortcut: "m", enabled: true})
+	}
+	return items
 }
 
 func (m model) actionMenuKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {

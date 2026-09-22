@@ -58,6 +58,7 @@ go install github.com/leodeim/colimui@latest
 | `[` / `]` | Switch to the previous/next Colima profile |
 | `s` / `x` | Start/stop the current Colima profile |
 | `a` | Enable/disable idle auto-stop (saved for future runs) |
+| `m` | Enable/disable the macOS menu bar item (saved for future runs) |
 | `t` | Restart the selected container |
 | `e` | Open an interactive shell in the selected container |
 | `d` | Open deletion confirmation for a stopped container |
@@ -82,6 +83,10 @@ for 30 minutes, it runs `colima stop` for you. The header shows a countdown ("id
 
 Set `COLIMUI_AUTO_STOP` to override the saved setting for a single run: a
 duration such as `45m` or `2h` (minimum `1m`), or `off` to disable it.
+
+While the macOS menu bar item is running it takes over enforcement: it watches
+every profile (not just the selected one), keeps working after the TUI exits,
+and shows the countdown in each profile's submenu.
 
 ## New macOS setup script
 

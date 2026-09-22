@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"runtime"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -13,16 +14,24 @@ import (
 var version = "dev"
 
 func main() {
-	if len(os.Args) == 2 && os.Args[1] == "--version" {
-		fmt.Printf("colimui %s\n", version)
-		return
-	}
-	if len(os.Args) == 2 && os.Args[1] == "update" {
-		if err := update(); err != nil {
-			fmt.Fprintln(os.Stderr, "update failed:", err)
-			os.Exit(1)
+	if len(os.Args) == 2 {
+		switch os.Args[1] {
+		case "--version":
+			fmt.Printf("colimui %s\n", version)
+			return
+		case "update":
+			if err := update(); err != nil {
+				fmt.Fprintln(os.Stderr, "update failed:", err)
+				os.Exit(1)
+			}
+			return
+		case "menubar":
+			if err := runMenubar(execBackend{}); err != nil {
+				fmt.Fprintln(os.Stderr, "colimui:", err)
+				os.Exit(1)
+			}
+			return
 		}
-		return
 	}
 	if os.Getenv("COLIMUI_NO_COLOR") != "1" {
 		lipgloss.SetColorProfile(termenv.TrueColor)
@@ -31,6 +40,11 @@ func main() {
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "colimui:", err)
 		os.Exit(1)
+	}
+	if m.menubar && runtime.GOOS == "darwin" {
+		if err := spawnMenubar(); err != nil {
+			m.err = fmt.Errorf("menu bar item: %w", err)
+		}
 	}
 	if _, err := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion()).Run(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -47,6 +61,7 @@ func configuredModel() (model, error) {
 		return m, err
 	}
 	m.logTimestamps, m.logWrap = saved.LogTimestamps, saved.LogWrap
+	m.menubar = saved.Menubar
 	m.autoStopAfter, m.autoStop, err = resolveAutoStop(os.Getenv(autoStopEnv), saved, m.settingsFile)
 	return m, err
 }

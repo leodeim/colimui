@@ -66,6 +66,13 @@ func (m *model) trackIdle() tea.Cmd {
 		m.clearIdle()
 		return nil
 	}
+	// The menu bar process enforces auto-stop for every profile while it is
+	// alive (and keeps doing so after the TUI exits); only one of the two may
+	// dispatch stops, so the TUI stands down.
+	if m.menubarAlive != nil && m.menubarAlive() {
+		m.clearIdle()
+		return nil
+	}
 	if m.idleProfile != p.Name {
 		m.clearIdle()
 		m.idleProfile = p.Name

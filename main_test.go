@@ -341,12 +341,24 @@ func TestStartKeyWorksWithoutProfileRecord(t *testing.T) {
 }
 
 func TestActionMenuShowsShortcuts(t *testing.T) {
-	m := model{width: 100, height: 28, status: "ready", actionMenu: true, containers: []container{{Name: "api", State: "running"}}}
+	m := model{width: 100, height: 36, status: "ready", actionMenu: true, containers: []container{{Name: "api", State: "running"}}}
 	view := m.View()
 	for _, text := range []string{"colimui", "containers", "actions", "stop api", "restart api", "delete api", "keyboard shortcuts", "enter or shortcut key run", "[] profile"} {
 		if !strings.Contains(view, text) {
 			t.Fatalf("action menu is missing %q: %q", text, view)
 		}
+	}
+}
+
+func TestActionMenuWindowsItemsToHeight(t *testing.T) {
+	m := model{width: 100, height: 20, status: "ready", actionMenu: true, containers: []container{{Name: "api", State: "running"}}}
+	view := m.View()
+	if !strings.Contains(view, "more") || !strings.Contains(view, "[] profile") {
+		t.Fatalf("windowed menu is missing the overflow marker or footer: %q", view)
+	}
+	m.actionIndex = len(m.actionMenuItems()) - 1
+	if view := m.View(); !strings.Contains(view, "> show running only") {
+		t.Fatalf("selected last item is not visible: %q", view)
 	}
 }
 

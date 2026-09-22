@@ -99,6 +99,7 @@ type model struct {
 	logSearchBefore  string
 	logTimestamps    bool
 	logWrap          bool
+	menubar          bool
 	searchQuery      string
 	searchEditing    bool
 	searchBefore     string
@@ -147,6 +148,7 @@ type model struct {
 	backend          Backend
 	tick             tickFactory
 	now              func() time.Time
+	menubarAlive     func() bool
 }
 
 func initialModel() model {
@@ -160,7 +162,7 @@ func newModel(backend Backend, tick tickFactory) model {
 	if tick == nil {
 		tick = defaultTick
 	}
-	return model{focus: 0, status: "loading", expanded: make(map[string]bool), refreshID: 1, autoStopAfter: autoStopDefault, backend: backend, tick: tick, now: time.Now}
+	return model{focus: 0, status: "loading", expanded: make(map[string]bool), refreshID: 1, autoStopAfter: autoStopDefault, backend: backend, tick: tick, now: time.Now, menubarAlive: menubarAlive}
 }
 
 func (m model) clock() time.Time {

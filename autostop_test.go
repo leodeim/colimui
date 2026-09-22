@@ -49,6 +49,7 @@ func idleModel(backend Backend, clock *time.Time) model {
 	m.width, m.height = 100, 24
 	m.autoStop = true
 	m.now = func() time.Time { return *clock }
+	m.menubarAlive = func() bool { return false }
 	return m
 }
 
@@ -95,6 +96,23 @@ func TestIdleAutoStopDispatchesAfterThreshold(t *testing.T) {
 	m, cmd = refreshAt(m, running)
 	if cmd != nil || backend.actionCalls != 1 {
 		t.Fatalf("refresh during stop: cmd %v calls %d", cmd != nil, backend.actionCalls)
+	}
+}
+
+func TestIdleAutoStopDefersToMenubar(t *testing.T) {
+	backend := &fakeBackend{}
+	clock := time.Now()
+	m := idleModel(backend, &clock)
+	m.menubarAlive = func() bool { return true }
+	running := refreshMsg{profileName: "default", profiles: []profile{{Name: "default", Status: "Running"}}}
+
+	m, cmd := refreshAt(m, running)
+	if cmd != nil || strings.Contains(m.View(), "auto-stop in") {
+		t.Fatalf("deferred refresh: cmd %v view %q", cmd != nil, m.View())
+	}
+	clock = clock.Add(time.Hour)
+	if _, cmd = refreshAt(m, running); cmd != nil || backend.actionCalls != 0 {
+		t.Fatalf("deferred threshold: cmd %v calls %d", cmd != nil, backend.actionCalls)
 	}
 }
 

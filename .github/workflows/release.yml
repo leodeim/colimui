@@ -17,7 +17,9 @@ concurrency:
 jobs:
   release:
     name: Build and publish release
-    runs-on: ubuntu-latest
+    # macOS runner: the menubar (fyne.io/systray) needs cgo for the darwin
+    # binaries; linux binaries are cross-compiled with cgo disabled.
+    runs-on: macos-latest
     steps:
       - name: Check out source
         uses: actions/checkout@v6
@@ -45,19 +47,21 @@ jobs:
         run: go test ./...
 
       - name: Build release binaries
-        env:
-          CGO_ENABLED: "0"
         run: |
           mkdir -p dist
           for target in darwin/amd64 darwin/arm64 linux/amd64 linux/arm64; do
             os=${target%/*}
             arch=${target#*/}
-            GOOS="$os" GOARCH="$arch" go build -trimpath -ldflags="-s -w -X main.version=${RELEASE_TAG}" -o "dist/colimui_${os}_${arch}" .
+            cgo=0
+            if [[ "$os" == darwin ]]; then
+              cgo=1
+            fi
+            CGO_ENABLED="$cgo" GOOS="$os" GOARCH="$arch" go build -trimpath -ldflags="-s -w -X main.version=${RELEASE_TAG}" -o "dist/colimui_${os}_${arch}" .
           done
 
       - name: Create checksums
         working-directory: dist
-        run: sha256sum colimui_* > checksums.txt
+        run: shasum -a 256 colimui_* > checksums.txt
 
       - name: Publish release assets
         env:

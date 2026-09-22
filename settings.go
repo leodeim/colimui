@@ -14,6 +14,7 @@ type settings struct {
 	AutoStop      string `json:"auto_stop,omitempty"`
 	LogTimestamps bool   `json:"log_timestamps,omitempty"`
 	LogWrap       bool   `json:"log_wrap,omitempty"`
+	Menubar       bool   `json:"menubar,omitempty"`
 }
 
 // settingsPath follows XDG ($XDG_CONFIG_HOME, else ~/.config) on every
