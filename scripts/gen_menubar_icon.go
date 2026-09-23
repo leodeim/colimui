@@ -52,23 +52,25 @@ func main() {
 	log.Printf("wrote assets/menubar-template.png (%dx%d)", outSize, outSize)
 }
 
-// Geometry in a 256-unit design space, scaled to the render size.
+// A rounded C monogram in a 256-unit design space. Its open center and broad
+// terminals stay legible when macOS reduces it to menu bar size.
 const unit = float64(size) / 256
 
-var mountains = []point{{6, 248}, {94, 14}, {135, 122}, {189, 71}, {250, 248}}
+var monogram = []point{
+	{198, 45}, {100, 45}, {78, 51}, {61, 66}, {49, 88}, {45, 106},
+	{45, 150}, {49, 168}, {61, 190}, {78, 205}, {100, 211}, {198, 211},
+}
+
+const strokeRadius = 11
 
 func alphaAt(x, y float64) uint8 {
 	p := point{x / unit, y / unit}
-	shape := polygon(p, mountains) - 5
-	prompt := math.Min(
-		math.Min(
-			segment(p, point{78, 137}, point{117, 171}),
-			segment(p, point{117, 174}, point{78, 208}),
-		),
-		segment(p, point{136, 210}, point{188, 210}),
-	) - 16
-	distance := math.Max(shape, -prompt)
-	// 0.7px anti-aliasing band in design units
+	distance := math.Inf(1)
+	for i := 1; i < len(monogram); i++ {
+		distance = math.Min(distance, segment(p, monogram[i-1], monogram[i]))
+	}
+	distance -= strokeRadius
+	// Supersampling handles most edge smoothing; this narrow band softens steps.
 	switch {
 	case distance <= -0.35:
 		return 255
@@ -80,22 +82,6 @@ func alphaAt(x, y float64) uint8 {
 }
 
 type point struct{ x, y float64 }
-
-// polygon is the signed distance to a simple polygon (negative inside).
-func polygon(p point, v []point) float64 {
-	d := math.Inf(1)
-	sign := 1.0
-	for i, j := 0, len(v)-1; i < len(v); j, i = i, i+1 {
-		d = math.Min(d, segment(p, v[j], v[i]))
-		ex, ey := v[i].x-v[j].x, v[i].y-v[j].y
-		wx, wy := p.x-v[j].x, p.y-v[j].y
-		c1, c2, c3 := p.y >= v[j].y, p.y < v[i].y, ex*wy > ey*wx
-		if (c1 && c2 && c3) || (!c1 && !c2 && !c3) {
-			sign = -sign
-		}
-	}
-	return sign * d
-}
 
 // segment is the distance to the line segment ab.
 func segment(p, a, b point) float64 {

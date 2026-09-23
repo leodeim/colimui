@@ -129,8 +129,8 @@ func TestAutoStopStateLabel(t *testing.T) {
 		auto autoStopState
 		want string
 	}{
-		{"enabled", autoStopState{after: 30 * time.Minute, enabled: true}, "disable idle auto-stop (30m)"},
-		{"disabled", autoStopState{after: 30 * time.Minute}, "enable idle auto-stop (30m)"},
+		{"enabled", autoStopState{after: 30 * time.Minute, enabled: true}, "Disable auto-stop"},
+		{"disabled", autoStopState{after: 30 * time.Minute}, "Enable auto-stop"},
 		{"env on", autoStopState{after: 45 * time.Minute, enabled: true, env: true}, "idle auto-stop: 45m (COLIMUI_AUTO_STOP)"},
 		{"env off", autoStopState{after: 30 * time.Minute, env: true}, "idle auto-stop: off (COLIMUI_AUTO_STOP)"},
 		{"broken", autoStopState{err: errors.New("boom")}, "idle auto-stop: invalid setting"},

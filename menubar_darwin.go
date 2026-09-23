@@ -171,6 +171,8 @@ func (m *menubar) rebuild(profiles []profile, listErr error, auto autoStopState,
 	m.done = make(chan struct{})
 	done := m.done
 	systray.ResetMenu()
+	systray.AddMenuItem("colimui", "").Disable()
+	systray.AddSeparator()
 
 	if listErr != nil {
 		systray.AddMenuItem(truncate("colima unavailable: "+listErr.Error(), 70), listErr.Error()).Disable()
@@ -184,21 +186,38 @@ func (m *menubar) rebuild(profiles []profile, listErr error, auto autoStopState,
 		systray.AddSeparator()
 	}
 
-	for _, p := range profiles {
-		item := systray.AddMenuItem(menubarProfileLine(p), "")
-		item.AddSubMenuItem(menubarProfileDetails(p), "").Disable()
+	if len(profiles) == 1 {
+		p := profiles[0]
+		systray.AddMenuItem(menubarProfileLine(p), "").Disable()
+		systray.AddMenuItem(menubarProfileDetails(p), "").Disable()
 		if countdown := countdowns[p.Name]; countdown != "" {
-			item.AddSubMenuItem(countdown, "").Disable()
+			systray.AddMenuItem(countdown, "").Disable()
 		}
 		if m.isBusy(p.Name) {
-			item.AddSubMenuItem("Working…", "").Disable()
-			continue
-		}
-		if isRunning(p.Status) {
-			m.handle(done, item.AddSubMenuItem("Stop", ""), m.action(p.Name, "stop"))
-			m.handle(done, item.AddSubMenuItem("Restart", ""), m.action(p.Name, "restart"))
+			systray.AddMenuItem("Working…", "").Disable()
+		} else if isRunning(p.Status) {
+			m.handle(done, systray.AddMenuItem("Stop", ""), m.action(p.Name, "stop"))
+			m.handle(done, systray.AddMenuItem("Restart", ""), m.action(p.Name, "restart"))
 		} else {
-			m.handle(done, item.AddSubMenuItem("Start", ""), m.action(p.Name, "start"))
+			m.handle(done, systray.AddMenuItem("Start", ""), m.action(p.Name, "start"))
+		}
+	} else {
+		for _, p := range profiles {
+			item := systray.AddMenuItem(menubarProfileLine(p), "")
+			item.AddSubMenuItem(menubarProfileDetails(p), "").Disable()
+			if countdown := countdowns[p.Name]; countdown != "" {
+				item.AddSubMenuItem(countdown, "").Disable()
+			}
+			if m.isBusy(p.Name) {
+				item.AddSubMenuItem("Working…", "").Disable()
+				continue
+			}
+			if isRunning(p.Status) {
+				m.handle(done, item.AddSubMenuItem("Stop", ""), m.action(p.Name, "stop"))
+				m.handle(done, item.AddSubMenuItem("Restart", ""), m.action(p.Name, "restart"))
+			} else {
+				m.handle(done, item.AddSubMenuItem("Start", ""), m.action(p.Name, "start"))
+			}
 		}
 	}
 	if len(profiles) > 0 {
@@ -213,7 +232,7 @@ func (m *menubar) rebuild(profiles []profile, listErr error, auto autoStopState,
 	}
 	systray.AddSeparator()
 
-	m.handle(done, systray.AddMenuItem("Open colimui", "Open the colimui TUI in Terminal"), openTUI)
+	m.handle(done, systray.AddMenuItem("Open", "Open the colimui TUI in Terminal"), openTUI)
 	m.handle(done, systray.AddMenuItem("Quit", ""), systray.Quit)
 }
 

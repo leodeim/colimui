@@ -86,9 +86,9 @@ func (a autoStopState) label() string {
 	case a.env:
 		return fmt.Sprintf("idle auto-stop: off (%s)", autoStopEnv)
 	case a.enabled:
-		return fmt.Sprintf("disable idle auto-stop (%s)", formatCountdown(a.after))
+		return "Disable auto-stop"
 	default:
-		return fmt.Sprintf("enable idle auto-stop (%s)", formatCountdown(a.after))
+		return "Enable auto-stop"
 	}
 }
 
