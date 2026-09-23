@@ -19,7 +19,7 @@ A lightweight terminal UI for Colima and Docker.
 
 ## Install
 
-The installer supports macOS and Linux on Intel/AMD and ARM CPUs. It downloads binary, verifies its checksum, and installs to `/usr/local/bin`; set `INSTALL_DIR` to override it. 
+The installer supports macOS and Linux on Intel/AMD and ARM CPUs. It downloads the binary, verifies its checksum, and installs to `~/.local/bin`, set `INSTALL_DIR` to override it. If `~/.local/bin` is not in your `PATH`, the installer prints the line to add.
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/leodeim/colimui/main/scripts/install.sh | sh

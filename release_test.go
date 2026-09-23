@@ -1,6 +1,10 @@
 package main
 
 import (
+	"errors"
+	"io/fs"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -44,5 +48,57 @@ func TestUpdateNoticeIsShown(t *testing.T) {
 	view := updated.(model).View()
 	if !strings.Contains(view, "update available: v0.0.2") || !strings.Contains(view, "run colimui update") {
 		t.Fatalf("update notice missing from view: %q", view)
+	}
+}
+
+func TestReplaceBinaryFollowsSymlink(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "colimui-bin")
+	link := filepath.Join(dir, "colimui")
+	if err := os.WriteFile(target, []byte("old"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatal(err)
+	}
+	got, err := replaceBinary(link, []byte("new"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolvedTarget, _ := filepath.EvalSymlinks(target)
+	if got != resolvedTarget {
+		t.Fatalf("replaced %q, want %q", got, resolvedTarget)
+	}
+	if info, err := os.Lstat(link); err != nil || info.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("link was replaced by a regular file: %v %v", info, err)
+	}
+	data, err := os.ReadFile(link)
+	if err != nil || string(data) != "new" {
+		t.Fatalf("content via link = %q, %v", data, err)
+	}
+	if info, _ := os.Stat(target); info.Mode().Perm() != 0o755 {
+		t.Fatalf("mode = %v, want 0755", info.Mode().Perm())
+	}
+}
+
+func TestReplaceBinaryReportsPermissionWithoutLeftovers(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root can write read-only directories")
+	}
+	dir := t.TempDir()
+	path := filepath.Join(dir, "colimui")
+	if err := os.WriteFile(path, []byte("old"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(dir, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(dir, 0o755) })
+	if _, err := replaceBinary(path, []byte("new")); !errors.Is(err, fs.ErrPermission) {
+		t.Fatalf("error = %v, want permission error", err)
+	}
+	entries, _ := os.ReadDir(dir)
+	if data, _ := os.ReadFile(path); len(entries) != 1 || string(data) != "old" {
+		t.Fatalf("dir entries %v, content %q", entries, data)
 	}
 }

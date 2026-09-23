@@ -74,7 +74,7 @@ func updateSettings(path string, apply func(*settings)) error {
 }
 
 // writeFileAtomic replaces path via a same-directory rename, so a concurrent
-// reader (the menu bar polls this file) or a crash never sees a partial file.
+// reader (the menu bar polls the config) or a crash never sees a partial file.
 func writeFileAtomic(path string, data []byte, perm os.FileMode) error {
 	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".*")
 	if err != nil {

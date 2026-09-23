@@ -722,3 +722,47 @@ func TestComposeGroupFitsNarrowPane(t *testing.T) {
 		t.Fatalf("group pane height = %d, want 22", got)
 	}
 }
+
+func TestRunCLI(t *testing.T) {
+	for _, test := range []struct {
+		args       []string
+		code       int
+		stdout     string
+		stderr     string
+		noUsageOut bool
+	}{
+		{args: []string{"--version"}, code: 0, stdout: "colimui " + version + "\n"},
+		{args: []string{"version"}, code: 0, stdout: "colimui " + version + "\n"},
+		{args: []string{"-v"}, code: 0, stdout: "colimui " + version + "\n"},
+		{args: []string{"--help"}, code: 0, stdout: "Usage:"},
+		{args: []string{"-h"}, code: 0, stdout: "colimui update"},
+		{args: []string{"help"}, code: 0, stdout: autoStopEnv},
+		{args: []string{"udpate"}, code: 2, stderr: `unknown command "udpate"`},
+		{args: []string{"version", "extra"}, code: 2, stderr: `unexpected argument "extra"`, noUsageOut: true},
+	} {
+		t.Run(strings.Join(test.args, " "), func(t *testing.T) {
+			var stdout, stderr strings.Builder
+			code := runCLI(test.args, &stdout, &stderr)
+			if code != test.code {
+				t.Fatalf("exit code = %d, want %d (stderr %q)", code, test.code, stderr.String())
+			}
+			if !strings.Contains(stdout.String(), test.stdout) || !strings.Contains(stderr.String(), test.stderr) {
+				t.Fatalf("stdout %q stderr %q, want %q / %q", stdout.String(), stderr.String(), test.stdout, test.stderr)
+			}
+			if test.code == 2 && !test.noUsageOut && !strings.Contains(stderr.String(), "Usage:") {
+				t.Fatalf("unknown command should print usage, stderr %q", stderr.String())
+			}
+		})
+	}
+}
+
+func TestUsageListsEveryCommand(t *testing.T) {
+	help := usage()
+	for _, c := range cliCommands() {
+		for _, name := range c.names {
+			if !strings.Contains(help, name) {
+				t.Errorf("usage is missing %q", name)
+			}
+		}
+	}
+}

@@ -8,9 +8,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -20,6 +22,8 @@ import (
 )
 
 const releaseRepository = "leodeim/colimui"
+
+const installScriptURL = "https://raw.githubusercontent.com/" + releaseRepository + "/main/scripts/install.sh"
 
 var latestReleaseURL = "https://api.github.com/repos/" + releaseRepository + "/releases/latest"
 
@@ -188,12 +192,32 @@ func replaceExecutable(data []byte) error {
 	if err != nil {
 		return err
 	}
+	target, err := replaceBinary(executable, data)
+	if !errors.Is(err, fs.ErrPermission) {
+		return err
+	}
+	fmt.Fprintf(os.Stderr, "%s is not writable by you, so sudo will replace it.\n"+
+		"To update without a password, reinstall into ~/.local/bin and remove this copy:\n"+
+		"  curl -fsSL %s | sh\n  sudo rm %s\n", filepath.Dir(target), installScriptURL, target)
+	return sudoInstall(target, data)
+}
+
+// replaceBinary atomically swaps the binary behind path, following symlinks so
+// a linked install keeps its link; it returns the resolved target.
+func replaceBinary(path string, data []byte) (string, error) {
+	target, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return path, err
+	}
+	return target, writeFileAtomic(target, data, 0o755)
+}
+
+func sudoInstall(target string, data []byte) error {
 	temporary, err := os.CreateTemp("", "colimui-update-*")
 	if err != nil {
 		return err
 	}
-	temporaryPath := temporary.Name()
-	defer os.Remove(temporaryPath)
+	defer os.Remove(temporary.Name())
 	if _, err := temporary.Write(data); err != nil {
 		temporary.Close()
 		return err
@@ -201,19 +225,7 @@ func replaceExecutable(data []byte) error {
 	if err := temporary.Close(); err != nil {
 		return err
 	}
-	if err := os.Chmod(temporaryPath, 0755); err != nil {
-		return err
-	}
-
-	newPath := executable + ".new"
-	if err := os.WriteFile(newPath, data, 0755); err == nil {
-		defer os.Remove(newPath)
-		if err := os.Rename(newPath, executable); err == nil {
-			return nil
-		}
-	}
-
-	command := exec.Command("sudo", "install", "-m", "0755", temporaryPath, executable)
+	command := exec.Command("sudo", "install", "-m", "0755", temporary.Name(), target)
 	command.Stdin, command.Stdout, command.Stderr = os.Stdin, os.Stdout, os.Stderr
 	if err := command.Run(); err != nil {
 		return fmt.Errorf("replace executable: %w", err)

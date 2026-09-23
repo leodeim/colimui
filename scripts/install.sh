@@ -3,7 +3,8 @@
 set -eu
 
 repository="leodeim/colimui"
-install_dir="${INSTALL_DIR:-/usr/local/bin}"
+# A user-owned default lets `colimui update` replace itself without sudo.
+install_dir="${INSTALL_DIR:-$HOME/.local/bin}"
 
 os=$(uname -s)
 arch=$(uname -m)
@@ -76,3 +77,25 @@ fi
 
 echo "colimui installed to ${install_dir}/colimui"
 "${install_dir}/colimui" --version
+
+case ":${PATH}:" in
+  *":${install_dir}:"*)
+    found=$(command -v colimui || true)
+    if [ -n "$found" ] && [ "$found" != "${install_dir}/colimui" ]; then
+      echo
+      echo "Warning: ${found} comes first in your PATH and shadows this install."
+      echo "Remove it to use the new one:  rm ${found}  (or: sudo rm ${found})"
+    fi
+    ;;
+  *)
+    case "${SHELL:-}" in
+      */zsh) rc="$HOME/.zshrc" ;;
+      */bash) rc="$HOME/.bashrc" ;;
+      *) rc="your shell profile" ;;
+    esac
+    echo
+    echo "${install_dir} is not in your PATH. Add it by running:"
+    echo "  echo 'export PATH=\"${install_dir}:\$PATH\"' >> ${rc}"
+    echo "then open a new terminal."
+    ;;
+esac
