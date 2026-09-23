@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -91,8 +92,54 @@ func commandOutput(profileName string, timeout time.Duration, command string, ar
 	return output, err
 }
 
+// dockerEnv points docker at the profile's socket as colima reports it, so a
+// missing or edited "colima" docker context cannot break colimui. The named
+// context is the fallback while colima cannot report a socket.
 func dockerEnv(profileName string) []string {
+	if host, ok := dockerHost(profileName); ok {
+		return append(os.Environ(), "DOCKER_HOST="+host)
+	}
 	return append(os.Environ(), "DOCKER_CONTEXT="+dockerContext(profileName))
+}
+
+// dockerHosts caches each profile's socket; colima derives it from the
+// profile name alone, so it cannot change during a process lifetime.
+var dockerHosts = struct {
+	sync.Mutex
+	byProfile map[string]string
+}{byProfile: map[string]string{}}
+
+// colimaStatus is swapped in tests to avoid running colima.
+var colimaStatus func(profileName string) ([]byte, error)
+
+// init breaks the cycle colimaStatus -> commandOutput -> dockerEnv -> colimaStatus.
+func init() {
+	colimaStatus = func(profileName string) ([]byte, error) {
+		return commandOutput("", listTimeout, "colima", "status", "--json", "--profile", profileName)
+	}
+}
+
+func dockerHost(profileName string) (string, bool) {
+	dockerHosts.Lock()
+	host, ok := dockerHosts.byProfile[profileName]
+	dockerHosts.Unlock()
+	if ok {
+		return host, true
+	}
+	output, err := colimaStatus(profileName)
+	if err != nil {
+		return "", false
+	}
+	var status struct {
+		DockerSocket string `json:"docker_socket"`
+	}
+	if err := json.Unmarshal(output, &status); err != nil || status.DockerSocket == "" {
+		return "", false
+	}
+	dockerHosts.Lock()
+	dockerHosts.byProfile[profileName] = status.DockerSocket
+	dockerHosts.Unlock()
+	return status.DockerSocket, true
 }
 
 func listProfiles() ([]profile, error) {

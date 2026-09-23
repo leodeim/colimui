@@ -36,3 +36,68 @@ func TestCommandOutputSuccess(t *testing.T) {
 		t.Fatalf("output = %q, %v", out, err)
 	}
 }
+
+func stubColimaStatus(t *testing.T, fn func(string) ([]byte, error)) *int {
+	t.Helper()
+	calls := 0
+	previous := colimaStatus
+	colimaStatus = func(name string) ([]byte, error) {
+		calls++
+		return fn(name)
+	}
+	dockerHosts.Lock()
+	dockerHosts.byProfile = map[string]string{}
+	dockerHosts.Unlock()
+	t.Cleanup(func() {
+		colimaStatus = previous
+		dockerHosts.Lock()
+		dockerHosts.byProfile = map[string]string{}
+		dockerHosts.Unlock()
+	})
+	return &calls
+}
+
+func lastEnv(env []string, key string) string {
+	value := ""
+	for _, kv := range env {
+		if k, v, ok := strings.Cut(kv, "="); ok && k == key {
+			value = v
+		}
+	}
+	return value
+}
+
+func TestDockerEnvUsesColimaSocket(t *testing.T) {
+	calls := stubColimaStatus(t, func(name string) ([]byte, error) {
+		return []byte(`{"display_name":"colima","docker_socket":"unix:///home/u/.colima/` + name + `/docker.sock"}`), nil
+	})
+	for range 2 {
+		if got := lastEnv(dockerEnv("dev"), "DOCKER_HOST"); got != "unix:///home/u/.colima/dev/docker.sock" {
+			t.Fatalf("DOCKER_HOST = %q", got)
+		}
+	}
+	if *calls != 1 {
+		t.Fatalf("colima status ran %d times, want 1 (cached)", *calls)
+	}
+}
+
+func TestDockerEnvFallsBackToContext(t *testing.T) {
+	for name, fn := range map[string]func(string) ([]byte, error){
+		"not running": func(string) ([]byte, error) { return nil, errors.New("colima is not running") },
+		"no socket":   func(string) ([]byte, error) { return []byte(`{"runtime":"containerd"}`), nil },
+		"bad json":    func(string) ([]byte, error) { return []byte("nope"), nil },
+	} {
+		t.Run(name, func(t *testing.T) {
+			calls := stubColimaStatus(t, fn)
+			for range 2 {
+				env := dockerEnv("dev")
+				if got := lastEnv(env, "DOCKER_CONTEXT"); got != "colima-dev" {
+					t.Fatalf("DOCKER_CONTEXT = %q, want colima-dev", got)
+				}
+			}
+			if *calls != 2 {
+				t.Fatalf("colima status ran %d times, want 2 (failures not cached)", *calls)
+			}
+		})
+	}
+}
