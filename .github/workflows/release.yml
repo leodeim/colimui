@@ -6,26 +6,57 @@ on:
       - "main"
     tags:
       - "v*"
+  pull_request:
 
 permissions:
-  contents: write
-
-# Serialize runs so concurrent pushes to main cannot race on the next tag.
-concurrency:
-  group: release
+  contents: read
 
 jobs:
+  test:
+    name: Test (${{ matrix.os }})
+    strategy:
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: "1.26.x"
+
+      - name: Check formatting
+        run: test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Run tests
+        run: go test -race ./...
+
   release:
     name: Build and publish release
+    needs: test
+    if: github.event_name == 'push'
+    permissions:
+      contents: write
+    # Serialize runs so concurrent pushes to main cannot race on the next tag.
+    concurrency:
+      group: release
     # macOS runner: the menubar (fyne.io/systray) needs cgo for the darwin
     # binaries; linux binaries are cross-compiled with cgo disabled.
     runs-on: macos-latest
     steps:
       - name: Check out source
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           # Full history so the latest release tag is available for the bump.
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Determine release tag
         run: |
@@ -39,12 +70,9 @@ jobs:
           fi
 
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version: "1.26.x"
-
-      - name: Run tests
-        run: go test ./...
 
       - name: Build release binaries
         run: |

@@ -203,3 +203,19 @@ func TestAutoStopToggleReportsSaveFailure(t *testing.T) {
 		t.Fatalf("save failure: enabled %t err %v status %q", m.autoStop, m.err, m.status)
 	}
 }
+
+func TestAutoStopToggleRefusedWhenEnvPinned(t *testing.T) {
+	backend := &fakeBackend{}
+	clock := time.Now()
+	m := idleModel(backend, &clock)
+	m.settingsFile = filepath.Join(t.TempDir(), "colimui", "config.json")
+	m.autoStopPinned = true
+	updated, _ := m.key(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	m = updated.(model)
+	if !m.autoStop || m.status != "idle auto-stop is set by "+autoStopEnv {
+		t.Fatalf("pinned toggle: enabled %t status %q", m.autoStop, m.status)
+	}
+	if _, err := os.Stat(m.settingsFile); !os.IsNotExist(err) {
+		t.Fatalf("pinned toggle must not write settings, stat err = %v", err)
+	}
+}

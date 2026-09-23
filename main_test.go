@@ -28,9 +28,13 @@ type fakeBackend struct {
 	logsErr           error
 	shellProfileName  string
 	shellID           string
+	profilesErr       error
 }
 
 func (b *fakeBackend) Profiles() ([]profile, error) {
+	if b.profilesErr != nil {
+		return nil, b.profilesErr
+	}
 	return b.profiles, nil
 }
 
@@ -278,11 +282,12 @@ func TestSystemProfileAndContainers(t *testing.T) {
 	if _, err := exec.LookPath("docker"); err != nil {
 		t.Skip("docker is not installed")
 	}
-	containers, err := listContainers(profiles[0].Name)
-	if err != nil && !strings.Contains(err.Error(), "Cannot connect") {
+	if _, err := listContainers(profiles[0].Name); err != nil {
+		if exit := (*exec.ExitError)(nil); errors.As(err, &exit) {
+			t.Skipf("docker daemon unreachable: %v", err)
+		}
 		t.Fatal(err)
 	}
-	_ = containers
 }
 
 func TestMouseWheelScrollsLogs(t *testing.T) {
@@ -638,6 +643,27 @@ func TestRefreshDropsStaleResponse(t *testing.T) {
 	}
 	if got.currentProfileName() != "dev" || got.containers[0].ID != "old" {
 		t.Fatalf("stale refresh changed profile %q or containers %#v", got.currentProfileName(), got.containers)
+	}
+}
+
+func TestFailedProfileListingKeepsCurrentProfile(t *testing.T) {
+	profiles := []profile{{Name: "default", Status: "Running"}, {Name: "work", Status: "Running"}}
+	containers := []container{{ID: "id", Name: "api", State: "running", Status: "Up"}}
+	backend := &fakeBackend{profiles: profiles, containers: containers, profilesErr: errors.New("colima busy")}
+	m := newModel(backend, func() tea.Cmd { return nil })
+	m.profiles, m.profileIndex, m.containers = profiles, 1, containers
+
+	updated, _ := m.Update(m.queueRefresh(m.currentProfileName())())
+	m = updated.(model)
+	if m.currentProfileName() != "work" || len(m.containers) != 1 || m.err == nil || m.status != "connection error" {
+		t.Fatalf("after failed listing: profile %q containers %d err %v status %q", m.currentProfileName(), len(m.containers), m.err, m.status)
+	}
+
+	backend.profilesErr = nil
+	updated, _ = m.Update(m.queueRefresh(m.currentProfileName())())
+	m = updated.(model)
+	if m.currentProfileName() != "work" || backend.profileName != "work" || m.err != nil {
+		t.Fatalf("after recovery: profile %q queried %q err %v", m.currentProfileName(), backend.profileName, m.err)
 	}
 }
 

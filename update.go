@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"os/exec"
-	"runtime"
 	"slices"
 	"strings"
 	"time"
@@ -76,6 +75,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			m.appliedRefreshID = msg.requestID
+		}
+		if msg.listFailed {
+			m.err = msg.err
+			if !m.hasActiveActions() {
+				m.status = "connection error"
+			}
+			return m, m.trackIdle()
 		}
 		oldID := m.selectedID()
 		oldGroup := m.selectedGroupName()
@@ -338,6 +344,10 @@ func (m model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.status = "refreshing"
 		return m, m.queueRefresh(m.currentProfileName())
 	case "a":
+		if m.autoStopPinned {
+			m.status = "idle auto-stop is set by " + autoStopEnv
+			return m, nil
+		}
 		m.autoStop = !m.autoStop
 		saved := "off"
 		m.status = "idle auto-stop off"
@@ -349,7 +359,7 @@ func (m model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.persistSetting(func(s *settings) { s.AutoStop = saved })
 	case "m":
-		if runtime.GOOS != "darwin" {
+		if !menubarSupported {
 			return m, nil
 		}
 		toggle := spawnMenubar
@@ -521,7 +531,7 @@ func (m model) actionMenuItems() []actionMenuItem {
 		{label: "search containers", shortcut: "/", enabled: true},
 		{label: map[bool]string{false: "show running only", true: "show all states"}[m.runningOnly], shortcut: "R", enabled: true},
 	}
-	if runtime.GOOS == "darwin" {
+	if menubarSupported {
 		label := map[bool]string{false: "enable macOS menu bar item", true: "disable macOS menu bar item"}[m.menubar]
 		items = slices.Insert(items, 2, actionMenuItem{label: label, shortcut: "m", enabled: true})
 	}
@@ -626,7 +636,7 @@ func (m model) refreshCmd(requestID uint64, profileName string) tea.Cmd {
 			if name == "" {
 				name = "default"
 			}
-			return refreshMsg{profileName: name, requestID: requestID, err: err}
+			return refreshMsg{profileName: name, requestID: requestID, err: err, listFailed: true}
 		}
 		name := profileName
 		if name == "" {

@@ -4,7 +4,6 @@ package main
 
 import (
 	_ "embed"
-	"fmt"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -20,22 +19,22 @@ import (
 
 const menubarPollInterval = 5 * time.Second
 
+// menubarSupported gates the menu bar toggle to builds that can run it.
+const menubarSupported = true
+
 //go:embed assets/menubar-template.png
 var menubarIcon []byte
 
-// runMenubar blocks until the menu bar item quits. A pidfile keeps it a
-// singleton and lets the TUI's toggle find and stop it.
+// runMenubar blocks until the menu bar item quits. A locked pidfile keeps it
+// a singleton and lets the TUI's toggle find and stop it.
 func runMenubar(backend Backend) error {
-	if pid, running := menubarPid(); running {
-		return fmt.Errorf("the menu bar item is already running (pid %d)", pid)
-	}
-	if err := writeMenubarPidfile(); err != nil {
+	lock, err := lockMenubar()
+	if err != nil {
 		return err
 	}
-	// Cleanup happens here rather than in systray's onExit: with the internal
-	// event loop on macOS the library never invokes onExit, but Run does
-	// return once Quit is called.
-	defer removeMenubarPidfile()
+	// systray never invokes onExit with its internal macOS event loop, but Run
+	// does return once Quit is called.
+	defer lock.Close()
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, syscall.SIGTERM, os.Interrupt)
 	go func() {

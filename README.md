@@ -82,11 +82,13 @@ for 30 minutes, it runs `colima stop` for you. The header shows a countdown ("id
 12m") once the timer is armed; press `a` to turn the feature off or back on.
 
 Set `COLIMUI_AUTO_STOP` to override the saved setting for a single run: a
-duration such as `45m` or `2h` (minimum `1m`), or `off` to disable it.
+duration such as `45m` or `2h` (minimum `1m`), or `off` to disable it. While
+it is set, `a` is disabled.
 
 While the macOS menu bar item is running it takes over enforcement: it watches
 every profile (not just the selected one), keeps working after the TUI exits,
-and shows the countdown in each profile's submenu.
+and shows the countdown in each profile's submenu. A menu bar item started
+from the TUI follows the saved setting, not `COLIMUI_AUTO_STOP`.
 
 ## New macOS setup script
 

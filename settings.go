@@ -70,7 +70,29 @@ func updateSettings(path string, apply func(*settings)) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	return os.WriteFile(path, append(data, '\n'), 0o644)
+	return writeFileAtomic(path, append(data, '\n'), 0o644)
+}
+
+// writeFileAtomic replaces path via a same-directory rename, so a concurrent
+// reader (the menu bar polls this file) or a crash never sees a partial file.
+func writeFileAtomic(path string, data []byte, perm os.FileMode) error {
+	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmp.Name())
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Chmod(perm); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmp.Name(), path)
 }
 
 // persistSetting saves one settings change; on failure the toggle still

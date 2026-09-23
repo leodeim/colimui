@@ -2,12 +2,15 @@ package main
 
 import (
 	"errors"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 )
 
 // menubarPidPath is the pidfile beside the config file, empty when no config
@@ -21,14 +24,69 @@ func menubarPidPath() string {
 	return filepath.Join(filepath.Dir(config), "menubar.pid")
 }
 
-// menubarPid reports the pid recorded in the pidfile when that process is
-// still alive; a stale or unreadable pidfile counts as not running.
+// errMenubarRunning means another process holds the menu bar lock.
+var errMenubarRunning = errors.New("the menu bar item is already running")
+
+// lockMenubar takes the menu bar's exclusive lock and records the pid in the
+// locked file.
+func lockMenubar() (*os.File, error) {
+	path := menubarPidPath()
+	if path == "" {
+		return nil, errors.New("cannot resolve a config directory for the pidfile")
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return nil, err
+	}
+	file, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0o644)
+	if err != nil {
+		return nil, err
+	}
+	// A concurrent menubarPid probe holds a shared lock for a few syscalls;
+	// retry briefly so it cannot make a fresh start fail.
+	for attempt := 0; ; attempt++ {
+		err = syscall.Flock(int(file.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
+		if !errors.Is(err, syscall.EWOULDBLOCK) || attempt == 10 {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if err != nil {
+		file.Close()
+		if errors.Is(err, syscall.EWOULDBLOCK) {
+			return nil, errMenubarRunning
+		}
+		return nil, err
+	}
+	if err := file.Truncate(0); err != nil {
+		file.Close()
+		return nil, err
+	}
+	if _, err := file.WriteAt([]byte(strconv.Itoa(os.Getpid())+"\n"), 0); err != nil {
+		file.Close()
+		return nil, err
+	}
+	return file, nil
+}
+
+// menubarPid reports the pid of the process holding the menu bar lock; an
+// unlocked, missing or unreadable pidfile counts as not running.
 func menubarPid() (int, bool) {
 	path := menubarPidPath()
 	if path == "" {
 		return 0, false
 	}
-	data, err := os.ReadFile(path)
+	file, err := os.Open(path)
+	if err != nil {
+		return 0, false
+	}
+	defer file.Close()
+	if err := syscall.Flock(int(file.Fd()), syscall.LOCK_SH|syscall.LOCK_NB); err == nil {
+		syscall.Flock(int(file.Fd()), syscall.LOCK_UN)
+		return 0, false
+	} else if !errors.Is(err, syscall.EWOULDBLOCK) {
+		return 0, false
+	}
+	data, err := io.ReadAll(file)
 	if err != nil {
 		return 0, false
 	}
@@ -36,28 +94,7 @@ func menubarPid() (int, bool) {
 	if err != nil || pid <= 0 {
 		return 0, false
 	}
-	process, err := os.FindProcess(pid)
-	if err != nil || process.Signal(syscall.Signal(0)) != nil {
-		return 0, false
-	}
 	return pid, true
-}
-
-func writeMenubarPidfile() error {
-	path := menubarPidPath()
-	if path == "" {
-		return errors.New("cannot resolve a config directory for the pidfile")
-	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	return os.WriteFile(path, []byte(strconv.Itoa(os.Getpid())+"\n"), 0o644)
-}
-
-func removeMenubarPidfile() {
-	if path := menubarPidPath(); path != "" {
-		os.Remove(path)
-	}
 }
 
 // spawnMenubar starts `colimui menubar` in its own session so it survives the
@@ -71,6 +108,9 @@ func spawnMenubar() error {
 		return err
 	}
 	cmd := exec.Command(executable, "menubar")
+	// The menu bar outlives this run, so it follows the saved setting rather
+	// than this run's COLIMUI_AUTO_STOP override.
+	cmd.Env = slices.DeleteFunc(os.Environ(), func(kv string) bool { return strings.HasPrefix(kv, autoStopEnv+"=") })
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	if err := cmd.Start(); err != nil {
 		return err

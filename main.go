@@ -3,7 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
-	"runtime"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -41,7 +41,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, "colimui:", err)
 		os.Exit(1)
 	}
-	if m.menubar && runtime.GOOS == "darwin" {
+	if m.menubar && menubarSupported {
 		if err := spawnMenubar(); err != nil {
 			m.err = fmt.Errorf("menu bar item: %w", err)
 		}
@@ -62,6 +62,7 @@ func configuredModel() (model, error) {
 	}
 	m.logTimestamps, m.logWrap = saved.LogTimestamps, saved.LogWrap
 	m.menubar = saved.Menubar
+	m.autoStopPinned = strings.TrimSpace(os.Getenv(autoStopEnv)) != ""
 	m.autoStopAfter, m.autoStop, err = resolveAutoStop(os.Getenv(autoStopEnv), saved, m.settingsFile)
 	return m, err
 }

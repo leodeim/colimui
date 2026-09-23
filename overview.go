@@ -2,12 +2,9 @@ package main
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
 	"math"
-	"os"
-	"os/exec"
 	"strconv"
 	"strings"
 	"time"
@@ -32,20 +29,8 @@ type storageMsg struct {
 	at      time.Time
 }
 
-func dockerUsageOutput(profile string, timeout time.Duration, args ...string) ([]byte, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, "docker", args...)
-	cmd.Env = append(os.Environ(), "DOCKER_CONTEXT="+dockerContext(profile))
-	out, err := cmd.Output()
-	if ctx.Err() != nil {
-		return nil, fmt.Errorf("request timed out")
-	}
-	return out, err
-}
-
 func (execBackend) AllStats(profile string) ([]containerStats, error) {
-	out, err := dockerUsageOutput(profile, statsTimeout, "stats", "--no-stream", "--format", "{{json .}}")
+	out, err := commandOutput(profile, statsTimeout, "docker", "stats", "--no-stream", "--format", "{{json .}}")
 	if err != nil {
 		return nil, err
 	}
@@ -69,7 +54,7 @@ func parseAllStats(out []byte) ([]containerStats, error) {
 	return values, nil
 }
 func (execBackend) Storage(profile string) ([]storageRow, error) {
-	out, err := dockerUsageOutput(profile, 10*time.Second, "system", "df", "--format", "{{json .}}")
+	out, err := commandOutput(profile, 10*time.Second, "docker", "system", "df", "--format", "{{json .}}")
 	if err != nil {
 		return nil, err
 	}
@@ -83,7 +68,7 @@ func (execBackend) Cleanup(profile string) error {
 		{"system", "prune", "--all", "--force"},
 		{"volume", "prune", "--all", "--force"},
 	} {
-		if _, err := dockerUsageOutput(profile, 30*time.Second, args...); err != nil {
+		if _, err := commandOutput(profile, 30*time.Second, "docker", args...); err != nil {
 			return fmt.Errorf("docker %s: %w", strings.Join(args, " "), err)
 		}
 	}

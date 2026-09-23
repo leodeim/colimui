@@ -41,6 +41,7 @@ type refreshMsg struct {
 	profiles    []profile
 	containers  []container
 	err         error
+	listFailed  bool
 }
 
 type actionMsg struct {
@@ -142,6 +143,7 @@ type model struct {
 	actionIndex      int
 	autoStop         bool
 	autoStopAfter    time.Duration
+	autoStopPinned   bool
 	idleProfile      string
 	idleSince        time.Time
 	settingsFile     string

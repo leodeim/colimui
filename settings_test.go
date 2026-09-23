@@ -51,6 +51,26 @@ func TestUpdateSettingsPreservesOtherFields(t *testing.T) {
 	}
 }
 
+func TestUpdateSettingsLeavesNoTempFiles(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "colimui", "config.json")
+	for range 3 {
+		if err := updateSettings(path, func(s *settings) { s.LogWrap = !s.LogWrap }); err != nil {
+			t.Fatal(err)
+		}
+	}
+	entries, err := os.ReadDir(filepath.Dir(path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].Name() != "config.json" {
+		t.Fatalf("config dir entries = %v, want only config.json", entries)
+	}
+	info, err := os.Stat(path)
+	if err != nil || info.Mode().Perm() != 0o644 {
+		t.Fatalf("config.json mode = %v, %v, want 0644", info.Mode().Perm(), err)
+	}
+}
+
 func TestLogToggleKeysPersist(t *testing.T) {
 	m := newModel(&fakeBackend{}, func() tea.Cmd { return nil })
 	m.settingsFile = filepath.Join(t.TempDir(), "colimui", "config.json")

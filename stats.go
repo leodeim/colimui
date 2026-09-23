@@ -1,11 +1,8 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
-	"os"
-	"os/exec"
 	"strings"
 	"time"
 
@@ -40,14 +37,7 @@ func statsTick() tea.Cmd {
 }
 
 func (execBackend) Stats(profile, id string) (containerStats, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), statsTimeout)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, "docker", "stats", "--no-stream", "--format", "{{json .}}", id)
-	cmd.Env = append(os.Environ(), "DOCKER_CONTEXT="+dockerContext(profile))
-	output, err := cmd.Output()
-	if ctx.Err() != nil {
-		return containerStats{}, fmt.Errorf("stats timed out")
-	}
+	output, err := commandOutput(profile, statsTimeout, "docker", "stats", "--no-stream", "--format", "{{json .}}", id)
 	if err != nil {
 		return containerStats{}, fmt.Errorf("stats unavailable: %w", err)
 	}

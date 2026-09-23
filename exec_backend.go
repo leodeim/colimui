@@ -5,12 +5,18 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"sort"
 	"strings"
+	"time"
 )
+
+// listTimeout bounds each profile/container listing so a wedged daemon
+// cannot stall a refresh or the menu bar poll loop.
+const listTimeout = 15 * time.Second
 
 type execBackend struct{}
 
@@ -25,7 +31,7 @@ func (execBackend) Containers(profileName string) ([]container, error) {
 func (execBackend) Action(profileName, command string, args ...string) error {
 	cmd := exec.Command(command, args...)
 	if command == "docker" {
-		cmd.Env = append(os.Environ(), "DOCKER_CONTEXT="+dockerContext(profileName))
+		cmd.Env = dockerEnv(profileName)
 	}
 	output, err := cmd.CombinedOutput()
 	if err != nil && len(output) > 0 {
@@ -48,7 +54,7 @@ func (execBackend) OpenLogs(profileName, id string, req logRequest) (*logReader,
 	}
 	args = append(args, id)
 	cmd := exec.CommandContext(ctx, "docker", args...)
-	cmd.Env = append(os.Environ(), "DOCKER_CONTEXT="+dockerContext(profileName))
+	cmd.Env = dockerEnv(profileName)
 	reader, err := startLogReader(cmd, cancel)
 	if err != nil {
 		cancel()
@@ -59,12 +65,38 @@ func (execBackend) OpenLogs(profileName, id string, req logRequest) (*logReader,
 
 func (execBackend) Shell(profileName, id string) *exec.Cmd {
 	cmd := exec.Command("docker", "exec", "-it", id, "sh", "-c", "command -v bash >/dev/null 2>&1 && exec bash || exec sh")
-	cmd.Env = append(os.Environ(), "DOCKER_CONTEXT="+dockerContext(profileName))
+	cmd.Env = dockerEnv(profileName)
 	return cmd
 }
 
+// commandOutput runs a bounded query; docker targets the profile's context.
+// stderr is folded into the error because a bare exit status explains nothing.
+func commandOutput(profileName string, timeout time.Duration, command string, args ...string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, command, args...)
+	if command == "docker" {
+		cmd.Env = dockerEnv(profileName)
+	}
+	output, err := cmd.Output()
+	if ctx.Err() != nil {
+		return nil, fmt.Errorf("%s %s timed out after %s", command, strings.Join(args, " "), timeout)
+	}
+	var exit *exec.ExitError
+	if errors.As(err, &exit) {
+		if stderr := strings.TrimSpace(string(exit.Stderr)); stderr != "" {
+			return nil, fmt.Errorf("%w: %s", err, stderr)
+		}
+	}
+	return output, err
+}
+
+func dockerEnv(profileName string) []string {
+	return append(os.Environ(), "DOCKER_CONTEXT="+dockerContext(profileName))
+}
+
 func listProfiles() ([]profile, error) {
-	output, err := exec.Command("colima", "list", "--json").Output()
+	output, err := commandOutput("", listTimeout, "colima", "list", "--json")
 	if err != nil {
 		return nil, err
 	}
@@ -89,9 +121,7 @@ func listProfiles() ([]profile, error) {
 }
 
 func listContainers(profileName string) ([]container, error) {
-	cmd := exec.Command("docker", "ps", "--all", "--format", "{{json .}}")
-	cmd.Env = append(os.Environ(), "DOCKER_CONTEXT="+dockerContext(profileName))
-	output, err := cmd.Output()
+	output, err := commandOutput(profileName, listTimeout, "docker", "ps", "--all", "--format", "{{json .}}")
 	if err != nil {
 		return nil, err
 	}
