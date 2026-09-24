@@ -109,7 +109,7 @@ func configuredModel() (model, error) {
 		return m, err
 	}
 	m.logTimestamps, m.logWrap = saved.LogTimestamps, saved.LogWrap
-	m.menubar = saved.Menubar
+	m.menubar = saved.menubarEnabled()
 	m.autoStopPinned = strings.TrimSpace(os.Getenv(autoStopEnv)) != ""
 	m.autoStopAfter, m.autoStop, err = resolveAutoStop(os.Getenv(autoStopEnv), saved, m.settingsFile)
 	return m, err

@@ -95,3 +95,48 @@ func TestLogToggleKeysPersist(t *testing.T) {
 		t.Fatalf("settings after toggle back = %#v, %v, status %q", s, err, m.status)
 	}
 }
+
+func TestMenubarDefaultsOnUntilExplicitlyDisabled(t *testing.T) {
+	for _, tc := range []struct {
+		name, config string
+		want         bool
+	}{
+		{"fresh install", "", true},
+		{"config from before the menu bar", `{"log_wrap": true}`, true},
+		{"enabled", `{"menubar": true}`, true},
+		{"disabled", `{"menubar": false}`, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			t.Setenv("XDG_CONFIG_HOME", dir)
+			t.Setenv(autoStopEnv, "")
+			if tc.config != "" {
+				path := filepath.Join(dir, "colimui", "config.json")
+				if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(path, []byte(tc.config), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			m, err := configuredModel()
+			if err != nil || m.menubar != tc.want {
+				t.Fatalf("configuredModel() menubar = %t, %v, want %t", m.menubar, err, tc.want)
+			}
+		})
+	}
+}
+
+func TestMenubarDisabledSurvivesOtherUpdates(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "colimui", "config.json")
+	if err := updateSettings(path, func(s *settings) { s.Menubar = new(false) }); err != nil {
+		t.Fatal(err)
+	}
+	if err := updateSettings(path, func(s *settings) { s.LogWrap = true }); err != nil {
+		t.Fatal(err)
+	}
+	s, err := loadSettings(path)
+	if err != nil || s.menubarEnabled() {
+		t.Fatalf("settings after disabling = %#v, %v, want menubar disabled", s, err)
+	}
+}

@@ -14,7 +14,13 @@ type settings struct {
 	AutoStop      string `json:"auto_stop,omitempty"`
 	LogTimestamps bool   `json:"log_timestamps,omitempty"`
 	LogWrap       bool   `json:"log_wrap,omitempty"`
-	Menubar       bool   `json:"menubar,omitempty"`
+	Menubar       *bool  `json:"menubar,omitempty"`
+}
+
+// menubarEnabled defaults to on when the key is absent (fresh installs and
+// configs from before the menu bar existed); an explicit false sticks.
+func (s settings) menubarEnabled() bool {
+	return s.Menubar == nil || *s.Menubar
 }
 
 // settingsPath follows XDG ($XDG_CONFIG_HOME, else ~/.config) on every

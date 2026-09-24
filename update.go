@@ -372,7 +372,7 @@ func (m model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.menubar = !m.menubar
 		m.status = "menu bar item " + onOff(m.menubar)
-		m.persistSetting(func(s *settings) { s.Menubar = m.menubar })
+		m.persistSetting(func(s *settings) { s.Menubar = new(m.menubar) })
 	case "s":
 		if p := m.currentProfile(); !m.hasActiveProfileAction() && (p == nil || !isRunning(p.Status)) {
 			name := m.currentProfileName()
