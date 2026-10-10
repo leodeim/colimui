@@ -28,6 +28,14 @@ func TestIsNewerVersion(t *testing.T) {
 	}
 }
 
+func TestReleaseDownloadURLPinsVersion(t *testing.T) {
+	got := releaseDownloadURL("v0.1.15", "colimui_darwin_arm64")
+	want := "https://github.com/leodeim/colimui/releases/download/v0.1.15/colimui_darwin_arm64"
+	if got != want {
+		t.Fatalf("releaseDownloadURL() = %q, want %q", got, want)
+	}
+}
+
 func TestVerifyChecksum(t *testing.T) {
 	data := []byte("hello")
 	checksums := "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824  colimui_darwin_arm64\n"

@@ -123,23 +123,27 @@ func update() error {
 	if err != nil {
 		return err
 	}
-	baseURL := "https://github.com/" + releaseRepository + "/releases/latest/download"
-	binaryData, err := download(ctx, baseURL+"/"+binary)
+	binaryData, err := download(ctx, releaseDownloadURL(latest, binary))
 	if err != nil {
 		return err
 	}
-	checksums, err := download(ctx, baseURL+"/checksums.txt")
+	checksums, err := download(ctx, releaseDownloadURL(latest, "checksums.txt"))
 	if err != nil {
 		return err
 	}
 	if err := verifyChecksum(binary, binaryData, checksums); err != nil {
 		return err
 	}
-	if err := replaceExecutable(binaryData); err != nil {
+	target, err := replaceExecutable(binaryData)
+	if err != nil {
 		return err
 	}
-	fmt.Printf("updated colimui to %s\n", latest)
+	fmt.Printf("updated colimui to %s at %s\n", latest, target)
 	return nil
+}
+
+func releaseDownloadURL(tag, asset string) string {
+	return "https://github.com/" + releaseRepository + "/releases/download/" + tag + "/" + asset
 }
 
 func releaseBinaryName() (string, error) {
@@ -187,19 +191,19 @@ func verifyChecksum(filename string, data, checksums []byte) error {
 	return nil
 }
 
-func replaceExecutable(data []byte) error {
+func replaceExecutable(data []byte) (string, error) {
 	executable, err := os.Executable()
 	if err != nil {
-		return err
+		return "", err
 	}
 	target, err := replaceBinary(executable, data)
 	if !errors.Is(err, fs.ErrPermission) {
-		return err
+		return target, err
 	}
 	fmt.Fprintf(os.Stderr, "%s is not writable by you, so sudo will replace it.\n"+
 		"To update without a password, reinstall into ~/.local/bin and remove this copy:\n"+
 		"  curl -fsSL %s | sh\n  sudo rm %s\n", filepath.Dir(target), installScriptURL, target)
-	return sudoInstall(target, data)
+	return target, sudoInstall(target, data)
 }
 
 // replaceBinary atomically swaps the binary behind path, following symlinks so
