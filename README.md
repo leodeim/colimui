@@ -1,5 +1,19 @@
 <p align="center">
-  <img src="assets/colimui-logo.png" alt="colimui logo" width="350">
+  <img src="assets/colimui-logo.png" alt="ColimUI logo" width="180">
+</p>
+
+<h1 align="center">ColimUI</h1>
+
+<p align="center">
+  <strong>A lightweight terminal UI for Colima and Docker.</strong><br>
+  Manage containers, inspect logs, switch profiles, and reclaim storage with keyboard shortcuts.
+</p>
+
+<p align="center">
+  <a href="#install">Install</a> ·
+  <a href="#keys">Keyboard shortcuts</a> ·
+  <a href="#idle-auto-stop">Idle auto-stop</a> ·
+  <a href="#new-macos-setup-script">macOS setup</a>
 </p>
 
 <p align="center">
@@ -9,12 +23,8 @@
   <a href="https://github.com/leodeim/colimui/blob/main/LICENSE"><img src="https://img.shields.io/github/license/leodeim/colimui" alt="License"></a>
 </p>
 
-# ColimUI
-
-A lightweight terminal UI for Colima and Docker.
-
 <p align="center">
-  <img src="assets/screenshot.png" alt="colimui logo" width="650">
+  <img src="assets/screenshot.png" alt="ColimUI terminal interface showing containers, container details, and live logs" width="700">
 </p>
 
 ## Install
