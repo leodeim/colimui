@@ -1,6 +1,6 @@
 //go:build ignore
 
-// Generates assets/menubar-template.png, the macOS menu bar template icon.
+// Generates internal/app/assets/menubar-template.png, the macOS menu bar template icon.
 //
 // Run from the repository root: go run scripts/gen_menubar_icon.go
 package main
@@ -41,7 +41,7 @@ func main() {
 		}
 	}
 
-	file, err := os.Create("assets/menubar-template.png")
+	file, err := os.Create("internal/app/assets/menubar-template.png")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -49,7 +49,7 @@ func main() {
 	if err := png.Encode(file, out); err != nil {
 		log.Fatal(err)
 	}
-	log.Printf("wrote assets/menubar-template.png (%dx%d)", outSize, outSize)
+	log.Printf("wrote internal/app/assets/menubar-template.png (%dx%d)", outSize, outSize)
 }
 
 // A rounded C monogram in a 256-unit design space. Its open center and broad

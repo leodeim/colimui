@@ -84,7 +84,7 @@ jobs:
             if [[ "$os" == darwin ]]; then
               cgo=1
             fi
-            CGO_ENABLED="$cgo" GOOS="$os" GOARCH="$arch" go build -trimpath -ldflags="-s -w -X main.version=${RELEASE_TAG}" -o "dist/colimui_${os}_${arch}" .
+            CGO_ENABLED="$cgo" GOOS="$os" GOARCH="$arch" go build -trimpath -ldflags="-s -w -X github.com/leodeim/colimui/internal/app.version=${RELEASE_TAG}" -o "dist/colimui_${os}_${arch}" .
           done
 
       - name: Create checksums
