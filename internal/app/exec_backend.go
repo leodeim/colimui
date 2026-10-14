@@ -43,18 +43,7 @@ func (execBackend) Action(profileName, command string, args ...string) error {
 
 func (execBackend) OpenLogs(profileName, id string, req logRequest) (*logReader, error) {
 	ctx, cancel := context.WithCancel(context.Background())
-	args := []string{"logs", "--timestamps"}
-	switch {
-	case req.since != "":
-		args = append(args, "--since", req.since)
-	case !req.fromStart:
-		args = append(args, "--tail", "200")
-	}
-	if req.follow {
-		args = append(args, "--follow")
-	}
-	args = append(args, id)
-	cmd := exec.CommandContext(ctx, "docker", args...)
+	cmd := exec.CommandContext(ctx, "docker", logArgs(id, req)...)
 	cmd.Env = dockerEnv(profileName)
 	reader, err := startLogReader(cmd, cancel)
 	if err != nil {
@@ -62,6 +51,20 @@ func (execBackend) OpenLogs(profileName, id string, req logRequest) (*logReader,
 		return nil, err
 	}
 	return reader, nil
+}
+
+func logArgs(id string, req logRequest) []string {
+	args := []string{"logs", "--timestamps"}
+	if !req.all {
+		args = append(args, "--tail", "200")
+	}
+	if req.since != "" {
+		args = append(args, "--since", req.since)
+	}
+	if req.follow {
+		args = append(args, "--follow")
+	}
+	return append(args, id)
 }
 
 func (execBackend) Shell(profileName, id string) *exec.Cmd {

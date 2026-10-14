@@ -5,12 +5,12 @@ import (
 	"strings"
 )
 
-// logRequest selects how much history a log stream starts with: fromStart
-// loads everything, since resumes after a timestamp, otherwise a short tail.
+// logRequest selects the history a log stream starts with: a short tail
+// unless all is set, keeping only lines after the docker timestamp since.
 type logRequest struct {
-	follow    bool
-	fromStart bool
-	since     string
+	follow bool
+	all    bool
+	since  string
 }
 
 type Backend interface {

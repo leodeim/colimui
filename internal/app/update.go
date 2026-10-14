@@ -123,7 +123,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.resetLogs()
 			if m.selectedID() != "" {
 				var err error
-				m.reader, err = m.currentBackend().OpenLogs(m.currentProfileName(), m.selectedID(), logRequest{follow: m.follow})
+				m.reader, err = m.currentBackend().OpenLogs(m.currentProfileName(), m.selectedID(), m.tailRequest())
 				if err != nil {
 					m.err, m.status = err, "logs failed"
 					return m, autoStopCmd

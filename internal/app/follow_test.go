@@ -2,6 +2,7 @@ package app
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -151,11 +152,47 @@ func TestClearLogsKeepsStreamAndSkipsClearedTailOnReconnect(t *testing.T) {
 	if backend.logSince != "2024-01-02T03:04:05.000000002Z" {
 		t.Fatalf("reconnect after empty re-clear lost the cutoff: since %q", backend.logSince)
 	}
+}
 
-	updated, _ = got.key(shortcutKey("l"))
-	got = updated.(model)
-	if got.logClearedSince != "" || backend.logSince != "" {
-		t.Fatalf("reload kept the clear cutoff: model %q backend %q", got.logClearedSince, backend.logSince)
+func TestClearedLogsStayHiddenUntilHome(t *testing.T) {
+	const cutoff = "2024-01-02T03:04:05.000000001Z"
+	backend := &fakeBackend{}
+	m := newModel(backend, func() tea.Cmd { return nil })
+	m.profiles = []profile{{Name: "default", Status: "Running"}}
+	m.containers = []container{{ID: "one", Name: "one", State: "running"}, {ID: "two", Name: "two", State: "running"}}
+	m.follow = true
+	m.logs = []string{"2024-01-02T03:04:05Z old"}
+	press := func(keys ...string) {
+		t.Helper()
+		for _, k := range keys {
+			updated, _ := m.key(shortcutKey(k))
+			m = updated.(model)
+		}
+	}
+
+	press("z")
+	if !strings.Contains(m.renderLogs(8, 80), "logs cleared") {
+		t.Fatal("empty cleared pane does not say so")
+	}
+	for _, keys := range [][]string{{"f", "f"}, {"l"}, {"j", "k"}} {
+		backend.logSince = ""
+		press(keys...)
+		if m.selectedID() != "one" || backend.logID != "one" || backend.logSince != cutoff || backend.logAll {
+			t.Fatalf("%v reopened %q since %q all %t, want the cleared tail", keys, backend.logID, backend.logSince, backend.logAll)
+		}
+	}
+	press("j")
+	if backend.logID != "two" || backend.logSince != "" {
+		t.Fatalf("cutoff leaked to another container: since %q", backend.logSince)
+	}
+
+	press("k", "home")
+	if !backend.logAll || backend.logSince != "" || m.clearCutoff() != "" {
+		t.Fatalf("home = all %t since %q cutoff %q, want full history", backend.logAll, backend.logSince, m.clearCutoff())
+	}
+	press("l")
+	if backend.logSince != "" {
+		t.Fatalf("cutoff survived home: since %q", backend.logSince)
 	}
 }
 

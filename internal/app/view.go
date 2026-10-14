@@ -376,7 +376,7 @@ func (m model) renderLogs(height, width int) string {
 		heading = selectedStyle.Render("▸ " + heading)
 	}
 	wrapLabel := map[bool]string{true: "w trim", false: "w wrap"}[m.logWrap]
-	lines := []string{heading + "  " + map[bool]string{true: "following · f pause", false: "paused · f resume"}[m.follow] + " · " + wrapLabel}
+	lines := []string{heading + "  " + map[bool]string{true: "following · f pause", false: "paused · f resume"}[m.follow] + " · " + wrapLabel + " · z clear"}
 	if m.logQuery != "" {
 		lines = append(lines, mutedStyle.Render(truncate(fmt.Sprintf("/%s · %d matches", m.logQuery, len(m.filteredLogs())), width-4)))
 	}
@@ -385,6 +385,8 @@ func (m model) renderLogs(height, width int) string {
 	}
 	if m.selectedContainer() == nil {
 		lines = append(lines, "", mutedStyle.Render("select a service"))
+	} else if len(m.logs) == 0 && m.clearCutoff() != "" {
+		lines = append(lines, mutedStyle.Render("logs cleared · home loads full history"))
 	} else if len(m.logs) == 0 {
 		lines = append(lines, mutedStyle.Render("no logs"))
 	} else {

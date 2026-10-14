@@ -23,7 +23,7 @@ type fakeBackend struct {
 	logProfileName    string
 	logID             string
 	logFollow         bool
-	logFromStart      bool
+	logAll            bool
 	logSince          string
 	logsErr           error
 	shellProfileName  string
@@ -53,7 +53,7 @@ func (b *fakeBackend) Action(profileName, command string, args ...string) error 
 
 func (b *fakeBackend) OpenLogs(profileName, id string, req logRequest) (*logReader, error) {
 	b.logProfileName, b.logID = profileName, id
-	b.logFollow, b.logFromStart, b.logSince = req.follow, req.fromStart, req.since
+	b.logFollow, b.logAll, b.logSince = req.follow, req.all, req.since
 	return nil, b.logsErr
 }
 

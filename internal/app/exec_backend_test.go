@@ -37,6 +37,24 @@ func TestCommandOutputSuccess(t *testing.T) {
 	}
 }
 
+func TestLogArgs(t *testing.T) {
+	tests := []struct {
+		name string
+		req  logRequest
+		want string
+	}{
+		{"tail", logRequest{}, "logs --timestamps --tail 200 id"},
+		{"tail after clear", logRequest{follow: true, since: "T"}, "logs --timestamps --tail 200 --since T --follow id"},
+		{"resume", logRequest{follow: true, all: true, since: "T"}, "logs --timestamps --since T --follow id"},
+		{"full history", logRequest{all: true}, "logs --timestamps id"},
+	}
+	for _, tt := range tests {
+		if got := strings.Join(logArgs("id", tt.req), " "); got != tt.want {
+			t.Errorf("%s: args = %q, want %q", tt.name, got, tt.want)
+		}
+	}
+}
+
 func stubColimaStatus(t *testing.T, fn func(string) ([]byte, error)) *int {
 	t.Helper()
 	calls := 0

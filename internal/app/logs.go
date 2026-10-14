@@ -134,17 +134,32 @@ func (m *model) clearLogSelection() {
 // resetLogs drops the retained buffer and all state derived from it.
 func (m *model) resetLogs() {
 	m.logs, m.logPartial, m.logScroll, m.logFromStart, m.logBytes, m.logsTruncated, m.partialTrimmed = nil, "", 0, false, 0, false, false
-	m.logClearedSince = ""
 	m.clearLogSelection()
 }
 
-// clearLogs empties the pane without touching the stream. The in-flight
-// partial line is kept so the next chunk still starts on a line boundary.
+// clearLogs hides the selected container's lines up to now from every later
+// tail, resume or reselection; only a full history load brings them back.
+// The in-flight partial line is kept so the next chunk starts on a line boundary.
 func (m *model) clearLogs() {
-	since, partial, trimmed := m.lastLogSince(), m.logPartial, m.partialTrimmed
+	if since := m.lastLogSince(); since != "" {
+		if m.logCleared == nil {
+			m.logCleared = make(map[string]string)
+		}
+		m.logCleared[m.selectedID()] = since
+	}
+	partial, trimmed := m.logPartial, m.partialTrimmed
 	m.resetLogs()
-	m.logPartial, m.partialTrimmed, m.logClearedSince = partial, trimmed, since
+	m.logPartial, m.partialTrimmed = partial, trimmed
 	m.status = "logs cleared"
+}
+
+func (m model) clearCutoff() string {
+	return m.logCleared[m.selectedID()]
+}
+
+// tailRequest asks for the selected container's latest lines after its clear cutoff.
+func (m model) tailRequest() logRequest {
+	return logRequest{follow: m.follow, since: m.clearCutoff()}
 }
 
 func (m *model) scrollLogs(key string) {
@@ -174,7 +189,12 @@ func (m *model) reloadSelectedLogs(all ...bool) tea.Cmd {
 	if m.selectedID() == "" {
 		return nil
 	}
-	reader, err := m.currentBackend().OpenLogs(m.currentProfileName(), m.selectedID(), logRequest{follow: m.follow, fromStart: fromStart})
+	req := m.tailRequest()
+	if fromStart {
+		delete(m.logCleared, m.selectedID())
+		req = logRequest{follow: m.follow, all: true}
+	}
+	reader, err := m.currentBackend().OpenLogs(m.currentProfileName(), m.selectedID(), req)
 	if err != nil {
 		m.err, m.status = err, "logs failed"
 		return nil
@@ -187,7 +207,7 @@ func (m *model) reloadSelectedLogs(all ...bool) tea.Cmd {
 // container stopped or restarted), resuming just past the newest retained
 // timestamp so nothing is duplicated and the buffer is kept.
 func (m *model) resumeFollowLogs() tea.Cmd {
-	reader, err := m.currentBackend().OpenLogs(m.currentProfileName(), m.selectedID(), logRequest{follow: true, since: m.lastLogSince()})
+	reader, err := m.currentBackend().OpenLogs(m.currentProfileName(), m.selectedID(), logRequest{follow: true, all: true, since: m.lastLogSince()})
 	if err != nil {
 		m.follow = false
 		m.err, m.status = err, "logs failed"
@@ -198,8 +218,8 @@ func (m *model) resumeFollowLogs() tea.Cmd {
 }
 
 // lastLogSince returns an RFC3339Nano instant just after the newest retained
-// log timestamp (or the cutoff taken at the last clear), for docker logs
-// --since. Never substitute the host clock: it drifts from the VM's.
+// log timestamp (or the clear cutoff), for docker logs --since. Never
+// substitute the host clock: it drifts from the VM's.
 func (m model) lastLogSince() string {
 	for i := len(m.logs) - 1; i >= 0; i-- {
 		if stamp, _, ok := strings.Cut(m.logs[i], " "); ok {
@@ -208,7 +228,7 @@ func (m model) lastLogSince() string {
 			}
 		}
 	}
-	return m.logClearedSince
+	return m.clearCutoff()
 }
 
 func (m *model) stopLogs() {
