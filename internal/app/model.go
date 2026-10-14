@@ -125,6 +125,7 @@ type model struct {
 	partialTrimmed   bool
 	logScroll        int
 	logFromStart     bool
+	logClearedSince  string
 	logSelecting     bool
 	logSelDragged    bool
 	logSelActive     bool

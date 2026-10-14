@@ -76,6 +76,7 @@ go install github.com/leodeim/colimui@latest
 | `y` | Copy the selected container's details to the clipboard |
 | `Y` | Copy the visible (filtered) logs to the clipboard |
 | `l` | Reload the selected container's logs |
+| `z` | Clear the log pane |
 | `f` | Pause streaming without clearing logs, or resume from the latest 200 lines |
 | `L` | Search retained log text (pauses streaming) |
 | `T` | Show/hide Docker timestamps |

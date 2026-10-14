@@ -115,3 +115,64 @@ func TestNonFollowStreamEndDoesNotRetry(t *testing.T) {
 		t.Fatal("tail load end scheduled a follow retry")
 	}
 }
+
+func TestClearLogsKeepsStreamAndSkipsClearedTailOnReconnect(t *testing.T) {
+	backend := &fakeBackend{}
+	m := newModel(backend, func() tea.Cmd { return nil })
+	m.profiles = []profile{{Name: "default", Status: "Running"}}
+	m.containers = []container{{ID: "one", Name: "one", State: "running"}}
+	m.follow = true
+	reader := &logReader{}
+	m.reader = reader
+	m.appendLogs("2024-01-02T03:04:05.000000001Z old\n2024-01-02T03:04:06Z half")
+	m.logScroll, m.logSelActive, m.logsTruncated = 1, true, true
+
+	updated, _ := m.key(shortcutKey("z"))
+	got := updated.(model)
+	if len(got.logs) != 0 || got.logScroll != 0 || got.logSelActive || got.logsTruncated {
+		t.Fatalf("clear left logs %q scroll %d selection %t truncated %t", got.logs, got.logScroll, got.logSelActive, got.logsTruncated)
+	}
+	if got.reader != reader || !got.follow {
+		t.Fatalf("clear stopped the stream: reader kept %t follow %t", got.reader == reader, got.follow)
+	}
+	updated, _ = got.Update(logsMsg{reader: reader, data: []byte(" line\n")})
+	got = updated.(model)
+	if len(got.logs) != 1 || got.logs[0] != "2024-01-02T03:04:06Z half line" {
+		t.Fatalf("partial line split by clear: %q", got.logs)
+	}
+
+	got.logs, got.logBytes = nil, 0
+	updated, _ = got.key(shortcutKey("z"))
+	got = updated.(model)
+	updated, _ = got.Update(logsMsg{reader: reader, done: true})
+	got = updated.(model)
+	updated, _ = got.Update(logRetryMsg{})
+	got = updated.(model)
+	if backend.logSince != "2024-01-02T03:04:05.000000002Z" {
+		t.Fatalf("reconnect after empty re-clear lost the cutoff: since %q", backend.logSince)
+	}
+
+	updated, _ = got.key(shortcutKey("l"))
+	got = updated.(model)
+	if got.logClearedSince != "" || backend.logSince != "" {
+		t.Fatalf("reload kept the clear cutoff: model %q backend %q", got.logClearedSince, backend.logSince)
+	}
+}
+
+func TestClearLogsNeedsSelectedContainer(t *testing.T) {
+	m := newModel(&fakeBackend{}, func() tea.Cmd { return nil })
+	m.containers = []container{
+		{ID: "a", Name: "app-a", ComposeProject: "app", ComposeService: "a", State: "running"},
+		{ID: "b", Name: "app-b", ComposeProject: "app", ComposeService: "b", State: "running"},
+	}
+	m.logs = []string{"kept"}
+	updated, _ := m.key(shortcutKey("z"))
+	if got := updated.(model); len(got.logs) != 1 || got.status == "logs cleared" {
+		t.Fatalf("clear on group header = logs %q status %q", got.logs, got.status)
+	}
+	for _, item := range m.actionMenuItems() {
+		if item.shortcut == "z" && item.enabled {
+			t.Fatal("clear enabled without a selected container")
+		}
+	}
+}

@@ -131,6 +131,22 @@ func (m *model) clearLogSelection() {
 	m.logSelStart, m.logSelEnd = 0, 0
 }
 
+// resetLogs drops the retained buffer and all state derived from it.
+func (m *model) resetLogs() {
+	m.logs, m.logPartial, m.logScroll, m.logFromStart, m.logBytes, m.logsTruncated, m.partialTrimmed = nil, "", 0, false, 0, false, false
+	m.logClearedSince = ""
+	m.clearLogSelection()
+}
+
+// clearLogs empties the pane without touching the stream. The in-flight
+// partial line is kept so the next chunk still starts on a line boundary.
+func (m *model) clearLogs() {
+	since, partial, trimmed := m.lastLogSince(), m.logPartial, m.partialTrimmed
+	m.resetLogs()
+	m.logPartial, m.partialTrimmed, m.logClearedSince = partial, trimmed, since
+	m.status = "logs cleared"
+}
+
 func (m *model) scrollLogs(key string) {
 	switch key {
 	case "pgup":
@@ -147,8 +163,7 @@ func (m *model) scrollLogs(key string) {
 func (m *model) reloadSelectedLogs(all ...bool) tea.Cmd {
 	fromStart := len(all) > 0 && all[0]
 	m.stopLogs()
-	m.logs, m.logPartial, m.logScroll, m.logBytes, m.logsTruncated, m.partialTrimmed = nil, "", 0, 0, false, false
-	m.clearLogSelection()
+	m.resetLogs()
 	m.logFromStart = fromStart
 	m.err = nil
 	if m.status == "logs failed" {
@@ -183,7 +198,8 @@ func (m *model) resumeFollowLogs() tea.Cmd {
 }
 
 // lastLogSince returns an RFC3339Nano instant just after the newest retained
-// log timestamp, suitable for docker logs --since.
+// log timestamp (or the cutoff taken at the last clear), for docker logs
+// --since. Never substitute the host clock: it drifts from the VM's.
 func (m model) lastLogSince() string {
 	for i := len(m.logs) - 1; i >= 0; i-- {
 		if stamp, _, ok := strings.Cut(m.logs[i], " "); ok {
@@ -192,7 +208,7 @@ func (m model) lastLogSince() string {
 			}
 		}
 	}
-	return ""
+	return m.logClearedSince
 }
 
 func (m *model) stopLogs() {

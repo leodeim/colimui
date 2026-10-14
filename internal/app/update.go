@@ -120,8 +120,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		autoStopCmd := m.trackIdle()
 		if oldID != m.selectedID() {
 			m.stopLogs()
-			m.logs, m.logPartial, m.logScroll, m.logFromStart, m.logBytes, m.logsTruncated, m.partialTrimmed = nil, "", 0, false, 0, false, false
-			m.clearLogSelection()
+			m.resetLogs()
 			if m.selectedID() != "" {
 				var err error
 				m.reader, err = m.currentBackend().OpenLogs(m.currentProfileName(), m.selectedID(), logRequest{follow: m.follow})
@@ -324,8 +323,8 @@ func (m model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			m.cancelDeleteConfirmation("ready")
 			m.stopLogs()
-			m.containers, m.logs, m.logPartial, m.logScroll, m.logFromStart, m.logBytes, m.logsTruncated, m.partialTrimmed = nil, nil, "", 0, false, 0, false, false
-			m.clearLogSelection()
+			m.containers = nil
+			m.resetLogs()
 			m.follow = false
 			m.status = "switching to " + m.currentProfileName()
 			return m, m.queueRefresh(m.currentProfileName())
@@ -447,6 +446,10 @@ func (m model) key(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.copyFilteredLogs()
 	case "l":
 		return m, m.reloadSelectedLogs()
+	case "z":
+		if m.selectedContainer() != nil {
+			m.clearLogs()
+		}
 	case "f":
 		if m.follow {
 			m.pauseLogs()
@@ -522,6 +525,7 @@ func (m model) actionMenuItems() []actionMenuItem {
 		{label: "load all logs for " + containerName, shortcut: "home", enabled: container != nil},
 		{label: "copy details for " + containerName, shortcut: "y", enabled: container != nil},
 		{label: "copy logs to clipboard", shortcut: "Y", enabled: container != nil && len(m.logs) > 0},
+		{label: "clear logs for " + containerName, shortcut: "z", enabled: container != nil && len(m.logs) > 0},
 		{label: "search log text", shortcut: "L", enabled: container != nil},
 		{label: "toggle log timestamps", shortcut: "T", enabled: true},
 		{label: map[bool]string{false: "wrap long log lines", true: "trim long log lines"}[m.logWrap], shortcut: "w", enabled: true},
